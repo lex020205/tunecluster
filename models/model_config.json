@@ -1,0 +1,118 @@
+{
+  "fitur_final": [
+    "danceability",
+    "energy",
+    "valence",
+    "acousticness",
+    "instrumentalness"
+  ],
+  "nama_cluster": {
+    "0": "Cenderung Energik",
+    "1": "Cenderung Tenang dan Akustik"
+  },
+  "K_FINAL": 2,
+  "threshold_birch": 1.1368031086310422,
+  "branching_factor_birch": 50,
+  "seed": 42,
+  "sample_size_train": 15000,
+  "jumlah_lagu_katalog": 89741,
+  "evaluasi": {
+    "kmeans": {
+      "silhouette": 0.31110167549685824,
+      "davies_bouldin": 1.3423653044489698,
+      "calinski_harabasz": 6235.579689351847,
+      "inertia": 52975.0571437116,
+      "waktu_training_detik": 0.06955799995921552,
+      "ari_pairwise": [
+        0.991691,
+        0.986197,
+        0.977944
+      ],
+      "ari_mean": 0.9852776971588574,
+      "silhouette_test_per_seed": {
+        "11": 0.321939,
+        "42": 0.323518,
+        "99": 0.321176
+      }
+    },
+    "birch": {
+      "silhouette": 0.38297833325645736,
+      "davies_bouldin": 0.9347469118731544,
+      "calinski_harabasz": 2970.590453668097,
+      "waktu_training_detik": 0.3425144999055192,
+      "ari_pairwise": [
+        0.113421,
+        0.389729,
+        0.21123
+      ],
+      "ari_mean": 0.23812667058306425,
+      "silhouette_test_per_seed": {
+        "11": 0.336047,
+        "42": 0.241634,
+        "99": 0.365168
+      }
+    }
+  },
+  "eksperimen_tambahan": {
+    "perbandingan_scaler": [
+      {
+        "Scaler": "StandardScaler",
+        "Algoritma": "K-Means",
+        "silhouette": 0.25450378773663584,
+        "davies_bouldin": 1.5839639947793978,
+        "calinski_harabasz": 4150.499509442043
+      },
+      {
+        "Scaler": "StandardScaler",
+        "Algoritma": "BIRCH",
+        "silhouette": 0.2164422118307165,
+        "davies_bouldin": 1.7527237500803314,
+        "calinski_harabasz": 2820.9443585484532
+      },
+      {
+        "Scaler": "MinMaxScaler",
+        "Algoritma": "K-Means",
+        "silhouette": 0.30065824919919365,
+        "davies_bouldin": 1.4144800289154011,
+        "calinski_harabasz": 5946.504921073502
+      },
+      {
+        "Scaler": "MinMaxScaler",
+        "Algoritma": "BIRCH",
+        "silhouette": 0.31231627982406557,
+        "davies_bouldin": 1.6865974469276572,
+        "calinski_harabasz": 4249.861811875443
+      }
+    ],
+    "perbandingan_fitur": [
+      {
+        "Fitur": "9 Fitur",
+        "Algoritma": "K-Means",
+        "silhouette": 0.25450378773663584,
+        "davies_bouldin": 1.5839639947793978,
+        "calinski_harabasz": 4150.499509442043
+      },
+      {
+        "Fitur": "9 Fitur",
+        "Algoritma": "BIRCH",
+        "silhouette": 0.2164422118307165,
+        "davies_bouldin": 1.7527237500803314,
+        "calinski_harabasz": 2820.9443585484532
+      },
+      {
+        "Fitur": "5 Fitur",
+        "Algoritma": "K-Means",
+        "silhouette": 0.31110167549685824,
+        "davies_bouldin": 1.3423653044489698,
+        "calinski_harabasz": 6235.579689351847
+      },
+      {
+        "Fitur": "5 Fitur",
+        "Algoritma": "BIRCH",
+        "silhouette": 0.38297833325645736,
+        "davies_bouldin": 0.9347469118731544,
+        "calinski_harabasz": 2970.590453668097
+      }
+    ]
+  }
+}

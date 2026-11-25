@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+data/tunecluster_users.db
+data/tunecluster_users.db-*
+.env
+.streamlit/secrets.toml
+*.ipynb
+hasil_spotify/
+spotify-tracks-dataset.csv
