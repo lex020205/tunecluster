@@ -10,6 +10,8 @@ menampilkan lagu beserta tautan dan pemutar Spotify.
 
 > **Demo:** [TuneCluster di Streamlit Community Cloud](https://your-app-name.streamlit.app)  
 > Ganti URL di atas dengan URL aplikasi setelah deployment selesai.
+>
+> **Source code:** [github.com/lex020205/tunecluster](https://github.com/lex020205/tunecluster)
 
 ## Screenshot
 
