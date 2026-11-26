@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import html
+import math
 from typing import Any
 
 import plotly.graph_objects as go
@@ -17,7 +18,14 @@ from utils.auth import (
     render_genre_badges,
     render_sidebar,
 )
-from utils.database import add_genre, remove_genre, save_history
+from utils.database import (
+    add_genre,
+    get_saved_tracks,
+    remove_genre,
+    remove_saved_track,
+    save_history,
+    save_track,
+)
 from utils.recommender import get_recommender, normalisasi_genre
 from utils.spotify_embed import render_track_card
 
@@ -261,6 +269,10 @@ if user is None:
 
 recommender = get_recommender()
 filter_genres_hasil = _render_sidebar_tambahan(user, recommender)
+has_popularity = (
+    "popularity" in recommender.katalog.columns
+    and recommender.katalog["popularity"].notna().any()
+)
 
 # Refresh referensi user jika diubah dari sidebar
 user = get_current_user() or user
@@ -302,6 +314,18 @@ with st.form("form_rekomendasi_playlist"):
         key="input_jumlah_lagu",
     )
 
+    mode_rekomendasi = st.radio(
+        "Urutan rekomendasi",
+        options=(
+            ["Kecocokan Audio", "Populer / Familiar"]
+            if has_popularity
+            else ["Kecocokan Audio"]
+        ),
+        horizontal=True,
+        key="input_mode_rekomendasi",
+        help="Mode populer memakai popularity Spotify (0–100), bukan riwayat pribadi Anda.",
+    )
+
     with st.expander("⚙️ Pengaturan Lanjutan"):
         algoritma_label = st.radio(
             "Pilih Algoritma Clustering",
@@ -330,6 +354,7 @@ if submit_btn:
             mood=mood_val,
             n=int(jumlah_lagu),
             algoritma=algo_val,
+            prioritaskan_populer=(mode_rekomendasi == "Populer / Familiar"),
         )
 
         # Hitung skor kemiripan: (1 - normalized distance) dalam persen
@@ -351,6 +376,7 @@ if submit_btn:
             "genre_tidak_tersedia": df_rekom.attrs.get("genre_tidak_tersedia", []),
             "fallback_audio": df_rekom.attrs.get("fallback_audio", False),
             "jumlah_kandidat": df_rekom.attrs.get("jumlah_kandidat", len(df_rekom)),
+            "prioritaskan_populer": df_rekom.attrs.get("prioritaskan_populer", False),
         }
 
         st.session_state["last_rekomendasi"] = df_rekom
@@ -468,6 +494,10 @@ if df_hasil is not None and meta_hasil is not None:
     if df_tampil.empty:
         st.info("Tidak ada lagu yang cocok dengan filter genre di sidebar. Kosongkan filter untuk melihat semua lagu.")
     else:
+        saved_track_ids = {
+            str(saved["track_id"])
+            for saved in get_saved_tracks(int(user["user_id"]))
+        }
         for idx, row in df_tampil.iterrows():
             render_track_card(
                 track_name=str(row["track_name"]),
@@ -479,5 +509,36 @@ if df_hasil is not None and meta_hasil is not None:
                 show_player=tampilkan_player,
                 jarak=float(row["jarak"]),
             )
+            if meta_hasil.get("prioritaskan_populer", False):
+                popularity = float(row["popularity"])
+                if math.isfinite(popularity):
+                    st.caption(f"Popularitas Spotify: {popularity:.0f}/100")
+            track_id = str(row["track_id"])
+            if track_id in saved_track_ids:
+                if st.button(
+                    "✅ Tersimpan · Hapus",
+                    key=f"remove_saved_track_{track_id}",
+                    width="stretch",
+                ):
+                    if remove_saved_track(int(user["user_id"]), track_id):
+                        st.toast("Lagu dihapus dari daftar tersimpan.", icon="🗑️")
+                        st.rerun()
+                    else:
+                        st.error("Lagu tersimpan tidak dapat dihapus.")
+            elif st.button(
+                "💾 Simpan Lagu",
+                key=f"save_track_{track_id}",
+                width="stretch",
+            ):
+                if save_track(
+                    user_id=int(user["user_id"]),
+                    track_id=track_id,
+                    aktivitas=str(meta_hasil["aktivitas"]),
+                    mood=str(meta_hasil["mood"]),
+                ):
+                    st.toast("Lagu tersimpan di Profil Anda.", icon="💾")
+                    st.rerun()
+                else:
+                    st.info("Lagu ini sudah tersimpan.")
 
 render_footer()

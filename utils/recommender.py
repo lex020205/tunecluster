@@ -237,6 +237,7 @@ class TuneClusterRecommender:
         mood: str,
         n: int = 10,
         algoritma: str = "kmeans",
+        prioritaskan_populer: bool = False,
     ) -> pd.DataFrame:
         """
         Hasilkan rekomendasi top-N lagu berdasarkan preferensi genre, aktivitas, dan mood.
@@ -254,6 +255,8 @@ class TuneClusterRecommender:
             Jumlah lagu rekomendasi yang dikembalikan (minimal 1).
         algoritma : str, default="kmeans"
             Model clustering yang dipakai ("kmeans" atau "birch").
+        prioritaskan_populer : bool, default=False
+            Jika True, urutkan kandidat yang sama berdasarkan popularity, lalu jarak audio.
 
         Returns
         -------
@@ -265,6 +268,13 @@ class TuneClusterRecommender:
         """
         if not isinstance(n, int) or isinstance(n, bool) or n < 1:
             raise ValueError("Parameter 'n' harus berupa bilangan bulat >= 1.")
+        if not isinstance(prioritaskan_populer, bool):
+            raise TypeError("Parameter 'prioritaskan_populer' harus berupa bool.")
+        if prioritaskan_populer and "popularity" not in self.katalog.columns:
+            raise ValueError(
+                "Kolom popularity tidak tersedia. Perbarui katalog dengan menjalankan "
+                "`export_models.py`."
+            )
 
         if genre_user is None:
             genre_list: list[str] = []
@@ -323,11 +333,32 @@ class TuneClusterRecommender:
         hasil["nama_cluster"] = nama_cluster_dict.get(target_cluster, f"Cluster {target_cluster}")
         hasil["jarak"] = jarak
 
-        hasil = (
-            hasil.sort_values(["jarak", "track_name"], ascending=[True, True])
-            .head(n)
-            .reset_index(drop=True)
-        )
+        if prioritaskan_populer:
+            popularitas = pd.to_numeric(
+                self.katalog.iloc[idx_kandidat]["popularity"],
+                errors="coerce",
+            )
+            if not popularitas.notna().any():
+                raise ValueError(
+                    "Tidak ada nilai popularity yang valid pada kandidat rekomendasi."
+                )
+            hasil["popularity"] = popularitas.to_numpy()
+            hasil = (
+                hasil.sort_values(
+                    ["popularity", "jarak", "track_name"],
+                    ascending=[False, True, True],
+                    na_position="last",
+                    kind="mergesort",
+                )
+                .head(n)
+                .reset_index(drop=True)
+            )
+        else:
+            hasil = (
+                hasil.sort_values(["jarak", "track_name"], ascending=[True, True])
+                .head(n)
+                .reset_index(drop=True)
+            )
 
         # Simpan metadata proses untuk ditampilkan di UI bila diperlukan
         hasil.attrs["algoritma"] = algo_valid
@@ -340,6 +371,7 @@ class TuneClusterRecommender:
         hasil.attrs["genre_tidak_tersedia"] = genre_tidak_tersedia
         hasil.attrs["fallback_audio"] = gunakan_fallback
         hasil.attrs["jumlah_kandidat"] = int(len(idx_kandidat))
+        hasil.attrs["prioritaskan_populer"] = prioritaskan_populer
 
         return hasil
 

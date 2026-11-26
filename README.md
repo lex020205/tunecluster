@@ -8,8 +8,7 @@ TuneCluster adalah aplikasi rekomendasi musik berbasis clustering. Aplikasi meng
 fitur audio lagu untuk mencari rekomendasi yang dekat dengan suasana yang dipilih, lalu
 menampilkan lagu beserta tautan dan pemutar Spotify.
 
-> **Demo:** [TuneCluster di Streamlit Community Cloud](https://your-app-name.streamlit.app)  
-> Ganti URL di atas dengan URL aplikasi setelah deployment selesai.
+> **Demo:** [TuneCluster di Streamlit Community Cloud](https://tunecluster.streamlit.app)
 >
 > **Source code:** [github.com/lex020205/tunecluster](https://github.com/lex020205/tunecluster)
 
@@ -22,8 +21,9 @@ Tambahkan screenshot aplikasi pada `assets/screenshot.png`, lalu ganti placehold
 ## Fitur utama
 
 - Rekomendasi playlist berdasarkan aktivitas, mood, dan genre favorit.
+- Opsi untuk mengutamakan lagu populer/familiar pada hasil rekomendasi tanpa mengubah perhitungan clustering.
 - Pilihan model clustering K-Means dan BIRCH.
-- Profil pengguna, pengelolaan genre favorit, dan riwayat playlist.
+- Profil pengguna, pengelolaan genre favorit, riwayat playlist, serta playlist pribadi untuk menyimpan dan menghapus lagu rekomendasi dengan filter aktivitas dan mood.
 - Halaman analisis berisi metrik evaluasi dan visualisasi interaktif.
 - Pemutar Spotify tertanam dan tautan pencarian lagu.
 
@@ -32,7 +32,7 @@ Tambahkan screenshot aplikasi pada `assets/screenshot.png`, lalu ganti placehold
 - Python dan Streamlit
 - pandas, NumPy, scikit-learn, dan joblib
 - Plotly, Matplotlib, dan Seaborn
-- SQLite untuk akun pengguna dan riwayat
+- SQLite untuk akun pengguna, riwayat, dan lagu tersimpan
 
 ## Menjalankan secara lokal
 
@@ -46,7 +46,8 @@ python -m streamlit run app.py
 ```
 
 Database SQLite dibuat otomatis di `data/tunecluster_users.db` saat aplikasi pertama kali
-dijalankan. File database ini bersifat lokal dan tidak dimasukkan ke repository.
+dijalankan. Lagu tersimpan dapat dikelola dari halaman Profil. File database ini bersifat
+lokal dan tidak dimasukkan ke repository.
 
 ## Deploy ke Streamlit Community Cloud
 

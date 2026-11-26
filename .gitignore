@@ -2,8 +2,10 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
-data/tunecluster_users.db
-data/tunecluster_users.db-*
+*.db
+*.db-*
+.cache/
+*.log
 .env
 .streamlit/secrets.toml
 *.ipynb

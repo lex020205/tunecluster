@@ -488,6 +488,7 @@ def main() -> None:
         "track_id",
         "track_name",
         "artists",
+        "popularity",
         "genre_gabungan",
         "cluster_kmeans",
         "cluster_birch",

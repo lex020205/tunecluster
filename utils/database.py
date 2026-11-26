@@ -1,10 +1,11 @@
 """
 database.py — Pengelolaan database SQLite untuk profil pengguna dan riwayat rekomendasi TuneCluster.
 
-Database disimpan di `data/tunecluster_users.db` dengan tiga tabel utama:
+Database disimpan di `data/tunecluster_users.db` dengan empat tabel utama:
 - `users`        : akun dan profil pengguna (password di-hash dengan SHA-256)
 - `user_genres`  : daftar genre favorit per pengguna
 - `user_history` : riwayat rekomendasi aktivitas, mood, dan track_id hasil rekomendasi
+- `saved_tracks` : lagu yang disimpan pengguna dari daftar rekomendasi
 """
 
 from __future__ import annotations
@@ -64,8 +65,8 @@ def _koneksi_db(db_path: str | Path | None = None) -> Iterator[sqlite3.Connectio
 
 def init_db(db_path: str | Path | None = None) -> None:
     """
-    Buat database SQLite beserta tabel `users`, `user_genres`, dan `user_history`
-    jika belum ada.
+    Buat database SQLite beserta tabel `users`, `user_genres`, `user_history`,
+    dan `saved_tracks` jika belum ada.
 
     Parameters
     ----------
@@ -111,10 +112,26 @@ def init_db(db_path: str | Path | None = None) -> None:
                 """
             )
             cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS saved_tracks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                    track_id TEXT NOT NULL,
+                    aktivitas TEXT NOT NULL,
+                    mood TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(user_id, track_id)
+                );
+                """
+            )
+            cursor.execute(
                 "CREATE INDEX IF NOT EXISTS idx_user_genres_uid ON user_genres(user_id);"
             )
             cursor.execute(
                 "CREATE INDEX IF NOT EXISTS idx_user_history_uid ON user_history(user_id);"
+            )
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_saved_tracks_uid ON saved_tracks(user_id);"
             )
     except sqlite3.Error as err:
         raise RuntimeError(f"Gagal menginisialisasi database: {err}") from err
@@ -613,6 +630,111 @@ def get_history(
         return hasil
     except sqlite3.Error as err:
         raise RuntimeError(f"Gagal mengambil riwayat rekomendasi: {err}") from err
+
+
+def save_track(
+    user_id: int,
+    track_id: str,
+    aktivitas: str,
+    mood: str,
+    *,
+    db_path: str | Path | None = None,
+) -> bool:
+    """Simpan satu lagu untuk pengguna; kembalikan False jika sudah tersimpan."""
+    if not isinstance(track_id, str) or not track_id.strip():
+        raise ValueError("Parameter 'track_id' tidak boleh kosong.")
+    if not isinstance(aktivitas, str) or not aktivitas.strip():
+        raise ValueError("Parameter 'aktivitas' tidak boleh kosong.")
+    if not isinstance(mood, str) or not mood.strip():
+        raise ValueError("Parameter 'mood' tidak boleh kosong.")
+    try:
+        uid = int(user_id)
+    except (TypeError, ValueError) as err:
+        raise ValueError("Parameter 'user_id' harus berupa bilangan bulat.") from err
+
+    try:
+        with _koneksi_db(db_path) as conn:
+            cursor = conn.cursor()
+            exists = cursor.execute(
+                "SELECT 1 FROM users WHERE user_id = ?",
+                (uid,),
+            ).fetchone()
+            if exists is None:
+                raise ValueError(f"User dengan user_id={uid} tidak ditemukan.")
+
+            cursor.execute(
+                """
+                INSERT OR IGNORE INTO saved_tracks
+                    (user_id, track_id, aktivitas, mood)
+                VALUES (?, ?, ?, ?)
+                """,
+                (uid, track_id.strip(), aktivitas.strip(), mood.strip()),
+            )
+            return cursor.rowcount > 0
+    except sqlite3.Error as err:
+        raise RuntimeError(f"Gagal menyimpan lagu: {err}") from err
+
+
+def remove_saved_track(
+    user_id: int,
+    track_id: str,
+    *,
+    db_path: str | Path | None = None,
+) -> bool:
+    """Hapus lagu tersimpan milik pengguna, tanpa memengaruhi pengguna lain."""
+    if not isinstance(track_id, str) or not track_id.strip():
+        raise ValueError("Parameter 'track_id' tidak boleh kosong.")
+    try:
+        uid = int(user_id)
+    except (TypeError, ValueError) as err:
+        raise ValueError("Parameter 'user_id' harus berupa bilangan bulat.") from err
+
+    try:
+        with _koneksi_db(db_path) as conn:
+            cursor = conn.execute(
+                "DELETE FROM saved_tracks WHERE user_id = ? AND track_id = ?",
+                (uid, track_id.strip()),
+            )
+            return cursor.rowcount > 0
+    except sqlite3.Error as err:
+        raise RuntimeError(f"Gagal menghapus lagu tersimpan: {err}") from err
+
+
+def get_saved_tracks(
+    user_id: int,
+    aktivitas: str | None = None,
+    mood: str | None = None,
+    *,
+    db_path: str | Path | None = None,
+) -> list[dict[str, Any]]:
+    """Ambil lagu tersimpan pengguna dengan filter aktivitas dan/atau mood."""
+    try:
+        uid = int(user_id)
+    except (TypeError, ValueError) as err:
+        raise ValueError("Parameter 'user_id' harus berupa bilangan bulat.") from err
+
+    conditions = ["user_id = ?"]
+    values: list[Any] = [uid]
+    for column, value in (("aktivitas", aktivitas), ("mood", mood)):
+        if value is not None:
+            if not isinstance(value, str):
+                raise TypeError(f"Filter '{column}' harus berupa string atau None.")
+            if value.strip():
+                conditions.append(f"{column} = ?")
+                values.append(value.strip())
+
+    query = f"""
+        SELECT id, user_id, track_id, aktivitas, mood, created_at
+        FROM saved_tracks
+        WHERE {' AND '.join(conditions)}
+        ORDER BY created_at DESC, id DESC
+    """
+    try:
+        with _koneksi_db(db_path) as conn:
+            rows = conn.execute(query, tuple(values)).fetchall()
+        return [dict(row) for row in rows]
+    except sqlite3.Error as err:
+        raise RuntimeError(f"Gagal mengambil lagu tersimpan: {err}") from err
 
 
 def get_user_stats(

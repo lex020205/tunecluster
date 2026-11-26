@@ -21,8 +21,10 @@ from utils.auth import (
 from utils.database import (
     add_genre,
     get_history,
+    get_saved_tracks,
     get_user_stats,
     remove_genre,
+    remove_saved_track,
     update_profile,
 )
 from utils.recommender import get_recommender
@@ -307,7 +309,85 @@ else:
 st.divider()
 
 # =============================================================================
-# SECTION 4: STATISTIK PERSONAL
+# SECTION 4: PLAYLIST PRIBADI / LAGU TERSIMPAN
+# =============================================================================
+st.subheader("💾 Playlist Pribadi / Lagu Tersimpan")
+saved_tracks = get_saved_tracks(user_id)
+
+if not saved_tracks:
+    st.info("Belum ada lagu tersimpan. Simpan lagu dari halaman Rekomendasi untuk menemukannya di sini.")
+else:
+    col_saved_activity, col_saved_mood = st.columns(2)
+    saved_activities = ["Semua"] + sorted({item["aktivitas"] for item in saved_tracks})
+    saved_moods = ["Semua"] + sorted({item["mood"] for item in saved_tracks})
+    with col_saved_activity:
+        selected_saved_activity = st.selectbox(
+            "Filter aktivitas",
+            options=saved_activities,
+            key="saved_tracks_activity_filter",
+        )
+    with col_saved_mood:
+        selected_saved_mood = st.selectbox(
+            "Filter mood",
+            options=saved_moods,
+            key="saved_tracks_mood_filter",
+        )
+
+    filtered_saved_tracks = [
+        item
+        for item in saved_tracks
+        if (selected_saved_activity == "Semua" or item["aktivitas"] == selected_saved_activity)
+        and (selected_saved_mood == "Semua" or item["mood"] == selected_saved_mood)
+    ]
+
+    if not filtered_saved_tracks:
+        st.info("Tidak ada lagu tersimpan yang cocok dengan filter ini.")
+    else:
+        for saved in filtered_saved_tracks:
+            track_id = str(saved["track_id"])
+            if track_id in katalog_lookup.index:
+                row_saved = katalog_lookup.loc[track_id]
+                if isinstance(row_saved, pd.DataFrame):
+                    row_saved = row_saved.iloc[0]
+                track_name = str(row_saved["track_name"])
+                artists = str(row_saved["artists"])
+                genre = str(row_saved["genre_gabungan"])
+            else:
+                track_name = f"Track {track_id}"
+                artists = "-"
+                genre = "-"
+
+            with st.container(border=True):
+                col_saved_info, col_saved_action = st.columns(
+                    [4, 1],
+                    vertical_alignment="center",
+                )
+                with col_saved_info:
+                    st.markdown(
+                        f"**{html.escape(track_name)}** - {html.escape(artists)}",
+                        unsafe_allow_html=True,
+                    )
+                    st.caption(
+                        f"{html.escape(genre)} · {saved['aktivitas']} · "
+                        f"{saved['mood']} · Disimpan {saved['created_at']}"
+                    )
+                with col_saved_action:
+                    if st.button(
+                        "🗑️ Hapus",
+                        key=f"profile_remove_saved_{saved['id']}",
+                        help=f"Hapus {track_name} dari lagu tersimpan",
+                        width="stretch",
+                    ):
+                        if remove_saved_track(user_id, track_id):
+                            st.toast("Lagu dihapus dari daftar tersimpan.", icon="🗑️")
+                            st.rerun()
+                        else:
+                            st.error("Lagu tersimpan tidak dapat dihapus.")
+
+st.divider()
+
+# =============================================================================
+# SECTION 5: STATISTIK PERSONAL
 # =============================================================================
 st.subheader("📊 Statistik Personal")
 
