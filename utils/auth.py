@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import html
+from textwrap import dedent
 from typing import Any
 
 import streamlit as st
@@ -101,13 +102,13 @@ def render_sidebar() -> None:
             username = html.escape(str(user.get("username", "-")))
             jumlah_genre = len(user.get("genres", []))
             st.markdown(
-                f"""
+                dedent(f"""
                 <div class="tc-account">
                     <div class="tc-account-secondary" style="font-size:0.75rem;">Masuk sebagai</div>
                     <div style="font-size:0.95rem;font-weight:600;">{nama}</div>
                     <div class="tc-account-secondary" style="font-size:0.8rem;">@{username} · {jumlah_genre} genre</div>
                 </div>
-                """,
+                """).strip(),
                 unsafe_allow_html=True,
             )
             if st.button("Keluar", key="sidebar_logout_btn", width="stretch"):

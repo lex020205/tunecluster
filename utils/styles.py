@@ -81,6 +81,34 @@ section[data-testid="stSidebar"] {
     border-radius: 10px;
     padding: 0.75rem 0.9rem;
     box-shadow: none;
+    min-width: 0;
+    overflow: visible !important;
+}
+
+[data-testid="stMetricLabel"],
+[data-testid="stMetricValue"],
+[data-testid="stMetricDelta"] {
+    overflow: visible !important;
+    text-overflow: clip !important;
+    white-space: normal !important;
+}
+
+[data-testid="stMetricLabel"] p {
+    font-size: 0.8rem !important;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+}
+
+[data-testid="stMetricValue"] div {
+    font-size: 1.35rem !important;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+}
+
+[data-testid="stMetricDelta"] {
+    font-size: 0.75rem !important;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
 }
 
 button[kind="primary"],
@@ -260,27 +288,56 @@ div[data-testid="stPageLink"][aria-current="page"] a {
     font-size: 1rem;
     font-weight: 600;
     line-height: 1.35;
+    min-height: 2.7em;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
 }
 
-.tc-track-header {
-    align-items: center;
-    display: flex;
-    gap: 0.75rem;
-    margin-bottom: 0.45rem;
+.tc-album-card {
+    min-width: 0;
 }
 
-.tc-track-cover {
-    align-items: center;
-    background: #303030;
+.tc-album-cover {
+    aspect-ratio: 1 / 1;
+    background: #242424;
     border: 1px solid var(--tc-divider);
-    border-radius: 7px;
+    border-radius: 10px;
+    margin-bottom: 0.7rem;
+    overflow: hidden;
+    width: 100%;
+}
+
+.tc-album-cover img {
+    display: block;
+    height: 100%;
+    object-fit: cover;
+    width: 100%;
+}
+
+.tc-album-cover-placeholder {
+    align-items: center;
+    background: #242424;
     color: #E8E8E8;
     display: flex;
-    flex: 0 0 42px;
-    font-size: 0.8rem;
-    font-weight: 600;
-    height: 42px;
+    font-size: 0.82rem;
     justify-content: center;
+    height: 100%;
+    width: 100%;
+}
+
+.tc-track-meta {
+    color: var(--tc-muted);
+    font-size: 0.82rem;
+    line-height: 1.35;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tc-track-genre {
+    margin-top: 0.3rem;
 }
 
 .tc-genre-badge {

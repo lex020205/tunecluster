@@ -7,6 +7,7 @@ from __future__ import annotations
 import html
 import json
 import math
+from textwrap import dedent
 from typing import Any
 
 import plotly.graph_objects as go
@@ -27,7 +28,7 @@ from utils.database import (
 )
 from utils.playlist_export import playlist_to_csv, playlist_to_text
 from utils.recommender import get_recommender, normalisasi_genre
-from utils.spotify_embed import get_spotify_search_url, render_track_card
+from utils.spotify_embed import get_spotify_search_url, render_now_playing, render_track_card
 
 st.set_page_config(
     page_title="Rekomendasi · TuneCluster",
@@ -503,7 +504,7 @@ if df_hasil is not None and meta_hasil is not None:
                 else ""
             )
             st.markdown(
-                f"""
+                dedent(f"""
                 <div class="cluster-box">
                     <div style="font-size:0.82rem; color:#B3B3B3;">Cluster Target ({algo_used.upper()})</div>
                     <div style="font-size:1.45rem; font-weight:800; color:#1DB954; margin-bottom:0.4rem;">
@@ -516,20 +517,9 @@ if df_hasil is not None and meta_hasil is not None:
                         {fallback_notice}
                     </div>
                 </div>
-                """,
+                """).strip(),
                 unsafe_allow_html=True,
             )
-
-            st.write("")
-            m1, m2, m3, m4, m5 = st.columns(5)
-            for col_m, fitur_key in zip([m1, m2, m3, m4, m5], FITUR_LABELS.keys()):
-                val_c = float(profil_cluster_row.get(fitur_key, 0.0))
-                val_t = float(meta_hasil["target_vektor"].get(fitur_key, 0.0))
-                col_m.metric(
-                    label=FITUR_LABELS[fitur_key],
-                    value=f"{val_t:.2f}",
-                    delta=f"{val_t - val_c:+.2f} vs cluster",
-                )
 
         with col_radar:
             fig_radar = _buat_radar_chart(
@@ -538,6 +528,16 @@ if df_hasil is not None and meta_hasil is not None:
                 nama_cluster=nama_cluster,
             )
             st.plotly_chart(fig_radar, width="stretch")
+
+        metric_columns = st.columns(5, gap="small")
+        for col_m, fitur_key in zip(metric_columns, FITUR_LABELS):
+            val_c = float(profil_cluster_row.get(fitur_key, 0.0))
+            val_t = float(meta_hasil["target_vektor"].get(fitur_key, 0.0))
+            col_m.metric(
+                label=FITUR_LABELS[fitur_key],
+                value=f"{val_t:.2f}",
+                delta=f"{val_t - val_c:+.2f} vs cluster",
+            )
 
     # Terapkan filter genre bila aktif
     df_tampil = df_hasil.copy()
@@ -568,15 +568,9 @@ if df_hasil is not None and meta_hasil is not None:
                     jarak=float(pick["jarak"]),
                 )
 
-    col_hdr, col_toggle, col_shuffle = st.columns([2.4, 1.3, 1.3], vertical_alignment="center")
+    col_hdr, col_shuffle = st.columns([3, 1], vertical_alignment="center")
     with col_hdr:
         st.markdown(f"#### Daftar lagu ({len(df_tampil)})")
-    with col_toggle:
-        tampilkan_player = st.toggle(
-            "Tampilkan pemutar",
-            value=True,
-            key="toggle_tampilkan_player",
-        )
     with col_shuffle:
         if st.button(
             "Acak playlist",
@@ -612,52 +606,71 @@ if df_hasil is not None and meta_hasil is not None:
                 width="stretch",
             )
 
-        for idx, row in df_tampil.iterrows():
-            render_track_card(
-                track_name=str(row["track_name"]),
-                artists=str(row["artists"]),
-                genre=str(row["genre_gabungan"]),
-                similarity_score=float(row["skor_kemiripan"]),
-                track_id=str(row["track_id"]),
-                rank=idx + 1,
-                show_player=tampilkan_player,
-                jarak=float(row["jarak"]),
-            )
-            if meta_hasil.get("prioritaskan_populer", False):
-                popularity = float(row["popularity"])
-                if math.isfinite(popularity):
-                    st.caption(f"Popularitas Spotify: {popularity:.0f}/100")
+        track_columns = st.columns(4, gap="medium")
+        for position, (_, row) in enumerate(df_tampil.iterrows()):
             track_id = str(row["track_id"])
-            if track_id in saved_track_ids:
-                if st.button(
-                    "Tersimpan · Hapus",
-                    key=f"remove_saved_track_{track_id}",
-                    width="stretch",
-                ):
-                    if remove_saved_track(int(user["user_id"]), track_id):
-                        st.toast("Lagu dihapus dari daftar tersimpan.")
-                        st.rerun()
-                    else:
-                        st.error("Lagu tersimpan tidak dapat dihapus.")
-            elif st.button(
-                "Simpan",
-                key=f"save_track_{track_id}",
-                width="stretch",
-            ):
-                if save_track(
-                    user_id=int(user["user_id"]),
+            with track_columns[position % len(track_columns)]:
+                render_track_card(
+                    track_name=str(row["track_name"]),
+                    artists=str(row["artists"]),
+                    genre=str(row["genre_gabungan"]),
+                    similarity_score=float(row["skor_kemiripan"]),
                     track_id=track_id,
-                    aktivitas=str(meta_hasil["aktivitas"]),
-                    mood=str(meta_hasil["mood"]),
-                ):
-                    st.toast("Lagu tersimpan di Profil Anda.")
-                    st.rerun()
-                else:
-                    st.info("Lagu ini sudah tersimpan.")
-            st.link_button(
-                "Spotify",
-                url=get_spotify_search_url(str(row["track_name"]), str(row["artists"])),
-                key=f"btn_spotify_playlist_{idx}_{row['track_id']}",
+                    rank=position + 1,
+                    show_player=False,
+                    show_full_player=False,
+                    jarak=float(row["jarak"]),
+                )
+                action_columns = st.columns(2, gap="small")
+                with action_columns[0]:
+                    if st.button(
+                        "Putar",
+                        key=f"play_recommended_track_{track_id}",
+                        width="stretch",
+                    ):
+                        st.session_state["recommendation_now_playing"] = {
+                            "track_id": track_id,
+                            "track_name": str(row["track_name"]),
+                            "artists": str(row["artists"]),
+                        }
+                with action_columns[1]:
+                    if track_id in saved_track_ids:
+                        if st.button(
+                            "Tersimpan",
+                            key=f"remove_saved_track_{track_id}",
+                            width="stretch",
+                        ):
+                            if remove_saved_track(int(user["user_id"]), track_id):
+                                st.toast("Lagu dihapus dari daftar tersimpan.")
+                                st.rerun()
+                            else:
+                                st.error("Lagu tersimpan tidak dapat dihapus.")
+                    elif st.button(
+                        "Simpan",
+                        key=f"save_track_{track_id}",
+                        width="stretch",
+                    ):
+                        if save_track(
+                            user_id=int(user["user_id"]),
+                            track_id=track_id,
+                            aktivitas=str(meta_hasil["aktivitas"]),
+                            mood=str(meta_hasil["mood"]),
+                        ):
+                            st.toast("Lagu tersimpan di Profil Anda.")
+                            st.rerun()
+                        else:
+                            st.info("Lagu ini sudah tersimpan.")
+                if meta_hasil.get("prioritaskan_populer", False):
+                    popularity = float(row["popularity"])
+                    if math.isfinite(popularity):
+                        st.caption(f"Popularitas Spotify: {popularity:.0f}/100")
+
+        now_playing = st.session_state.get("recommendation_now_playing")
+        if now_playing:
+            render_now_playing(
+                track_name=now_playing["track_name"],
+                artists=now_playing["artists"],
+                track_id=now_playing["track_id"],
             )
 
 render_footer()

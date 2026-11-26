@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import html
 from collections import Counter
+from textwrap import dedent
 
 import pandas as pd
 import plotly.express as px
@@ -27,7 +28,7 @@ from utils.database import (
     update_profile,
 )
 from utils.recommender import get_recommender
-from utils.spotify_embed import render_track_card
+from utils.spotify_embed import render_now_playing, render_track_card
 
 st.set_page_config(
     page_title="Profil · TuneCluster",
@@ -69,7 +70,7 @@ with col_info:
     with st.container(border=True):
         st.markdown("##### Detail akun")
         st.markdown(
-            f"""
+            dedent(f"""
             <div style="line-height:1.9; font-size:0.95rem;">
                 <div><span style="color:#9E9E9E;">Username:</span> <b style="color:#1DB954;">@{html.escape(str(user.get('username', '-')))}</b></div>
                 <div><span style="color:#9E9E9E;">Nama Lengkap:</span> <b>{html.escape(str(user.get('nama_lengkap', '-')))}</b></div>
@@ -77,7 +78,7 @@ with col_info:
                 <div><span style="color:#9E9E9E;">Tanggal Bergabung:</span> <b>{html.escape(str(user.get('created_at', '-')))}</b></div>
                 <div><span style="color:#9E9E9E;">Login Terakhir:</span> <b>{html.escape(str(user.get('last_login') or '-'))}</b></div>
             </div>
-            """,
+            """).strip(),
             unsafe_allow_html=True,
         )
 
@@ -337,7 +338,8 @@ else:
     if not filtered_saved_tracks:
         st.info("Tidak ada lagu tersimpan yang cocok dengan filter ini.")
     else:
-        for saved in filtered_saved_tracks:
+        saved_columns = st.columns(4, gap="medium")
+        for index, saved in enumerate(filtered_saved_tracks):
             track_id = str(saved["track_id"])
             if track_id in katalog_lookup.index:
                 row_saved = katalog_lookup.loc[track_id]
@@ -351,35 +353,49 @@ else:
                 artists = "-"
                 genre = "-"
 
-            col_saved_track, col_saved_action = st.columns(
-                [5, 1],
-                vertical_alignment="center",
-            )
-            with col_saved_track:
+            with saved_columns[index % len(saved_columns)]:
                 render_track_card(
                     track_name=track_name,
                     artists=artists,
                     genre=genre,
                     similarity_score=100.0,
                     track_id=track_id,
-                    show_player=True,
+                    show_player=False,
                     show_full_player=False,
                 )
                 st.caption(
                     f"{saved['aktivitas']} · {saved['mood']} · Disimpan {saved['created_at']}"
                 )
-            with col_saved_action:
-                if st.button(
-                    "Hapus",
-                    key=f"profile_remove_saved_{saved['id']}",
-                    help=f"Hapus {track_name} dari lagu tersimpan",
-                    width="stretch",
-                ):
-                    if remove_saved_track(user_id, track_id):
-                        st.toast("Lagu dihapus dari daftar tersimpan.")
-                        st.rerun()
-                    else:
-                        st.error("Lagu tersimpan tidak dapat dihapus.")
+                action_columns = st.columns(2, gap="small")
+                with action_columns[0]:
+                    if st.button(
+                        "Putar",
+                        key=f"profile_play_saved_{saved['id']}",
+                        width="stretch",
+                    ):
+                        st.session_state["profile_now_playing"] = {
+                            "track_id": track_id,
+                            "track_name": track_name,
+                            "artists": artists,
+                        }
+                with action_columns[1]:
+                    if st.button(
+                        "Hapus",
+                        key=f"profile_remove_saved_{saved['id']}",
+                        help=f"Hapus {track_name} dari lagu tersimpan",
+                        width="stretch",
+                    ):
+                        if remove_saved_track(user_id, track_id):
+                            st.toast("Lagu dihapus dari daftar tersimpan.")
+                            st.rerun()
+
+        now_playing = st.session_state.get("profile_now_playing")
+        if now_playing:
+            render_now_playing(
+                track_name=now_playing["track_name"],
+                artists=now_playing["artists"],
+                track_id=now_playing["track_id"],
+            )
 
 st.divider()
 

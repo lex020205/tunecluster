@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from textwrap import dedent
 from typing import Any
 
 import numpy as np
@@ -189,12 +190,12 @@ with st.container(border=True):
     for i, (judul_t, desk_t) in enumerate(tahap_crisp):
         with cols_crisp[i % len(cols_crisp)]:
             st.markdown(
-                f"""
+                dedent(f"""
                 <div class="crisp-card" style="margin-bottom:0.65rem;">
                     <div style="font-weight:700; color:#1DB954; font-size:0.92rem;">{judul_t}</div>
                     <div style="font-size:0.82rem; color:#D5D5D5; margin-top:0.25rem;">{desk_t}</div>
                 </div>
-                """,
+                """).strip(),
                 unsafe_allow_html=True,
             )
 
@@ -589,7 +590,7 @@ for col_i, (idx_c, row_c) in zip(cols_interp, profil_aktif.iterrows()):
     ringkas_rendah = ", ".join(fitur_rendah) if fitur_rendah else "-"
     with col_i:
         st.markdown(
-            f"""
+            dedent(f"""
             <div class="insight-box">
                 <div style="font-size:1.05rem; font-weight:700; color:#1DB954;">
                     Cluster {idx_c} — {row_c['nama_cluster']}
@@ -602,7 +603,7 @@ for col_i, (idx_c, row_c) in zip(cols_interp, profil_aktif.iterrows()):
                     <b>Fitur bernilai rendah (&lt; 0.35):</b> {ringkas_rendah}
                 </div>
             </div>
-            """,
+            """).strip(),
             unsafe_allow_html=True,
         )
 
