@@ -1,5 +1,5 @@
 """
-3_📊_Analisis.py — Halaman analisis data science perbandingan K-Means vs BIRCH (publik).
+3__Analisis.py — Halaman analisis data science perbandingan K-Means vs BIRCH (publik).
 """
 
 from __future__ import annotations
@@ -22,7 +22,6 @@ from utils.recommender import get_recommender
 
 st.set_page_config(
     page_title="Analisis Data Science · TuneCluster",
-    page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -50,33 +49,8 @@ FITUR_DESKRIPSI = {
 
 CLUSTER_COLORS = {
     "0": "#1DB954",
-    "1": "#4EA8DE",
+    "1": "#A7A7A7",
 }
-
-st.markdown(
-    """
-    <style>
-    .crisp-card {
-        background-color: #1E1E1E;
-        border: 1px solid #2D2D2D;
-        border-top: 3px solid #1DB954;
-        border-radius: 10px;
-        padding: 0.85rem 0.95rem;
-        height: 100%;
-    }
-    .insight-box {
-        background: linear-gradient(135deg, #1E1E1E 0%, #14281B 100%);
-        border: 1px solid #2A2A2A;
-        border-left: 4px solid #1DB954;
-        border-radius: 12px;
-        padding: 1rem 1.25rem;
-        margin-top: 0.5rem;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
 
 @st.cache_data(show_spinner=False)
 def _muat_data_analisis(base_dir_str: str) -> dict[str, Any]:
@@ -180,20 +154,29 @@ profil_bi = recommender.get_profil_cluster("birch")
 # =============================================================================
 # SECTION 1: OVERVIEW PENELITIAN
 # =============================================================================
-st.title("📊 Analisis Perbandingan K-Means vs BIRCH")
+st.title("Analisis")
 st.caption(
     "Halaman publik hasil penelitian Data Science TuneCluster — mengevaluasi pengelompokan "
     "89.741 lagu Spotify berdasarkan karakteristik audio menggunakan K-Means dan BIRCH."
 )
 
-col_m1, col_m2, col_m3, col_m4 = st.columns(4)
-col_m1.metric("Total Lagu Unik", f"{len(katalog):,}", help="Hasil deduplikasi track_id dari 114.000 baris")
-col_m2.metric("Sampel Pelatihan", f"{model_config.get('sample_size_train', 15000):,}", help="Sampel tetap (seed=42)")
-col_m3.metric("Total Genre Unik", f"{len(recommender.get_daftar_genre())}")
-col_m4.metric("Fitur & Cluster Final", f"{len(fitur_final)} Fitur · K={evaluasi['k_final']}")
+col_m1, col_m2 = st.columns(2)
+col_m1.metric(
+    "Total lagu unik",
+    f"{len(katalog):,}",
+    help="Hasil deduplikasi track_id dari 114.000 baris",
+)
+col_m2.metric(
+    "Sampel pelatihan",
+    f"{model_config.get('sample_size_train', 15000):,}",
+    help="Sampel tetap (seed=42)",
+)
+col_m3, col_m4 = st.columns(2)
+col_m3.metric("Genre unik", f"{len(recommender.get_daftar_genre())}")
+col_m4.metric("Fitur / K", f"{len(fitur_final)} / {evaluasi['k_final']}")
 
 with st.container(border=True):
-    st.markdown("#### 🧭 Metodologi CRISP-DM")
+    st.markdown("#### Metodologi CRISP-DM")
     tahap_crisp = [
         ("1. Business Understanding", "Merumuskan masalah eksplorasi playlist berbasis audio, genre, aktivitas, dan mood."),
         ("2. Data Understanding", "Mengaudit 114.000 baris dataset Spotify (89.741 lagu unik, 114 genre) & sebaran fitur."),
@@ -202,9 +185,9 @@ with st.container(border=True):
         ("5. Evaluation", "Mengukur kualitas internal (Silhouette, DBI, CH), waktu training, serta stabilitas antar-seed (ARI)."),
         ("6. Deployment", "Mengekspor model K-Means final & katalog terklaster ke aplikasi web Streamlit interaktif."),
     ]
-    cols_crisp = st.columns(3)
+    cols_crisp = st.columns(2)
     for i, (judul_t, desk_t) in enumerate(tahap_crisp):
-        with cols_crisp[i % 3]:
+        with cols_crisp[i % len(cols_crisp)]:
             st.markdown(
                 f"""
                 <div class="crisp-card" style="margin-bottom:0.65rem;">
@@ -215,7 +198,7 @@ with st.container(border=True):
                 unsafe_allow_html=True,
             )
 
-with st.expander("🎼 5 Fitur Audio yang Digunakan Model Final", expanded=False):
+with st.expander("5 fitur audio yang digunakan model final", expanded=False):
     df_fitur_info = pd.DataFrame(
         [
             {"Fitur": f, "Label": FITUR_LABELS[f], "Rentang": "0.0 – 1.0", "Deskripsi": FITUR_DESKRIPSI[f]}
@@ -229,7 +212,7 @@ st.divider()
 # =============================================================================
 # SECTION 2: PERBANDINGAN METRIK EVALUASI
 # =============================================================================
-st.subheader("📈 Perbandingan Metrik Evaluasi K-Means vs BIRCH")
+st.subheader("Perbandingan metrik evaluasi K-Means vs BIRCH")
 
 km_eval = evaluasi["kmeans"]
 bi_eval = evaluasi["birch"]
@@ -255,7 +238,7 @@ df_tabel_eval = pd.DataFrame(
     ]
 )
 
-st.markdown(f"##### 📋 Tabel Perbandingan Model Final (K = {evaluasi['k_final']}, 5 Fitur Audio, StandardScaler)")
+st.markdown(f"##### Tabel perbandingan model final (K = {evaluasi['k_final']}, 5 fitur audio, StandardScaler)")
 st.dataframe(df_tabel_eval, width="stretch", hide_index=True)
 
 # Bar Chart Side-by-Side untuk setiap metrik (subplot agar skala proporsional per metrik)
@@ -280,7 +263,7 @@ for col_idx, (judul_m, key_m, fmt_m) in enumerate(metrik_specs, start=1):
         go.Bar(
             x=["K-Means", "BIRCH"],
             y=[val_km, val_bi],
-            marker_color=["#1DB954", "#4EA8DE"],
+            marker_color=["#1DB954", "#A7A7A7"],
             text=[format(val_km, fmt_m), format(val_bi, fmt_m)],
             textposition="outside",
             showlegend=False,
@@ -355,7 +338,7 @@ else:
         f"- **Waktu Training**: BIRCH lebih cepat (**{t_bi:.4f} detik** vs **{t_km:.4f} detik**)."
     )
 
-st.markdown("##### 🤖 Interpretasi Otomatis & Kesimpulan")
+st.markdown("#####  Interpretasi Otomatis & Kesimpulan")
 interp_html = "<br>".join(
     re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", line) for line in interp_lines
 )
@@ -370,8 +353,8 @@ st.success(
 
 # Tambahan: Tren variasi K=2..8 dan eksperimen scaler/fitur
 if not df_eval_k.empty:
-    with st.expander("🔎 Eksperimen Variasi K = 2..8, Scaler, & Pemilihan Fitur (Notebook)", expanded=False):
-        tab_k, tab_sf = st.tabs(["📉 Tren Metrik K = 2..8 (9 Fitur)", "⚖️ Perbandingan Scaler & Jumlah Fitur"])
+    with st.expander("Eksperimen variasi K, scaler, dan fitur (notebook)", expanded=False):
+        tab_k, tab_sf = st.tabs(["Tren metrik K = 2..8", "Perbandingan scaler dan fitur"])
         with tab_k:
             metrik_pilih = st.selectbox(
                 "Pilih metrik untuk grafik K=2..8",
@@ -384,7 +367,7 @@ if not df_eval_k.empty:
                 y=metrik_pilih,
                 color="Algoritma",
                 markers=True,
-                color_discrete_map={"K-Means": "#1DB954", "BIRCH": "#4EA8DE"},
+                color_discrete_map={"K-Means": "#1DB954", "BIRCH": "#A7A7A7"},
                 title=f"Perbandingan {metrik_pilih} untuk K = 2 sampai 8",
             )
             fig_k.update_layout(
@@ -417,7 +400,7 @@ st.divider()
 # =============================================================================
 # SECTION 3: VISUALISASI CLUSTER (PCA 2D INTERAKTIF)
 # =============================================================================
-st.subheader("🗺️ Visualisasi Cluster dengan PCA 2D")
+st.subheader("Visualisasi cluster dengan PCA 2D")
 
 col_pca_opt1, col_pca_opt2 = st.columns([1.2, 1])
 with col_pca_opt1:
@@ -450,7 +433,7 @@ df_pca, var_pca, df_centroid = _hitung_pca_sample(
 kolom_label_pca = "label_kmeans" if algo_pca == "K-Means" else "label_birch"
 palette_pca = {}
 for lbl in sorted(df_pca[kolom_label_pca].unique()):
-    palette_pca[lbl] = "#1DB954" if lbl.startswith("Cluster 0") else "#4EA8DE"
+    palette_pca[lbl] = "#1DB954" if lbl.startswith("Cluster 0") else "#A7A7A7"
 
 fig_pca = px.scatter(
     df_pca,
@@ -490,7 +473,7 @@ if algo_pca == "K-Means":
             marker=dict(
                 symbol="x",
                 size=14,
-                color="#FFD166",
+                color="#FFFFFF",
                 line=dict(width=2, color="#121212"),
             ),
             name="Centroid K-Means",
@@ -513,7 +496,7 @@ st.divider()
 # =============================================================================
 # SECTION 4: PROFIL CLUSTER (RADAR CHART & HEATMAP)
 # =============================================================================
-st.subheader("🧬 Profil Audio Setiap Cluster")
+st.subheader("Profil audio setiap cluster")
 
 algo_profil_pilihan = st.radio(
     "Tampilkan profil cluster untuk algoritma",
@@ -529,7 +512,7 @@ with col_rad:
     fig_radar_profil = go.Figure()
     kategori = [FITUR_LABELS[f] for f in fitur_final]
     kategori_closed = kategori + [kategori[0]]
-    warna_cluster_list = [("#1DB954", "rgba(29, 185, 84, 0.25)"), ("#4EA8DE", "rgba(78, 168, 222, 0.25)")]
+    warna_cluster_list = [("#1DB954", "rgba(29, 185, 84, 0.25)"), ("#A7A7A7", "rgba(167, 167, 167, 0.16)")]
 
     for idx_c, row_c in profil_aktif.iterrows():
         vals = [float(row_c[f]) for f in fitur_final]
@@ -570,7 +553,7 @@ with col_heat:
             z=z_vals,
             x=x_labels,
             y=y_labels,
-            colorscale=[[0.0, "#16222A"], [0.5, "#1E6B52"], [1.0, "#1DB954"]],
+            colorscale=[[0.0, "#2A2A2A"], [0.5, "#666666"], [1.0, "#1DB954"]],
             zmin=0.0,
             zmax=1.0,
             text=np.round(z_vals, 3),
@@ -589,7 +572,7 @@ with col_heat:
     st.plotly_chart(fig_heat_profil, width="stretch")
 
 # Interpretasi karakter setiap cluster
-st.markdown("##### 💡 Interpretasi Karakter Cluster")
+st.markdown("##### Interpretasi karakter cluster")
 cols_interp = st.columns(len(profil_aktif))
 for col_i, (idx_c, row_c) in zip(cols_interp, profil_aktif.iterrows()):
     fitur_tinggi = [
@@ -628,12 +611,12 @@ st.divider()
 # =============================================================================
 # SECTION 5: DISTRIBUSI DATA
 # =============================================================================
-st.subheader("📊 Distribusi Fitur Audio & Korelasi")
+st.subheader("Distribusi fitur audio dan korelasi")
 
 stats_dist = _hitung_statistik_distribusi(katalog, fitur_final)
 
 tab_hist, tab_corr, tab_box = st.tabs(
-    ["📶 Histogram Fitur Audio", "🔗 Correlation Matrix", "📦 Box Plot per Cluster"]
+    ["Histogram fitur audio", "Matriks korelasi", "Box plot per cluster"]
 )
 
 with tab_hist:
@@ -680,7 +663,11 @@ with tab_corr:
             z=corr_df.to_numpy(),
             x=labels_corr,
             y=labels_corr,
-            colorscale="RdBu",
+            colorscale=[
+                [0.0, "#2A2A2A"],
+                [0.5, "#A7A7A7"],
+                [1.0, "#1DB954"],
+            ],
             zmid=0.0,
             zmin=-1.0,
             zmax=1.0,
@@ -733,7 +720,7 @@ with tab_box:
             x="Fitur",
             y="Nilai",
             color="Cluster",
-            color_discrete_sequence=["#1DB954", "#4EA8DE"],
+            color_discrete_sequence=["#1DB954", "#A7A7A7"],
             title=f"Perbandingan Sebaran Fitur Audio per Cluster ({algo_box}, Sampel 10.000 Lagu)",
         )
     else:
@@ -744,7 +731,7 @@ with tab_box:
             x="Cluster",
             y=fitur_box,
             color="Cluster",
-            color_discrete_sequence=["#1DB954", "#4EA8DE"],
+            color_discrete_sequence=["#1DB954", "#A7A7A7"],
             title=f"Distribusi {FITUR_LABELS[fitur_box]} per Cluster ({algo_box}, Sampel 10.000 Lagu)",
         )
 
@@ -763,9 +750,9 @@ st.divider()
 # =============================================================================
 # SECTION 6: PENJELASAN ALGORITMA & METRIK EVALUASI
 # =============================================================================
-st.subheader("📚 Penjelasan Algoritma & Metrik Evaluasi")
+st.subheader("Penjelasan algoritma dan metrik evaluasi")
 
-with st.expander("⚡ Bagaimana Cara Kerja K-Means?", expanded=False):
+with st.expander("Bagaimana cara kerja K-Means?", expanded=False):
     st.markdown(
         """
         **K-Means** adalah algoritma *partition-based clustering* yang membagi dataset menjadi **K** kelompok
@@ -795,7 +782,7 @@ with st.expander("⚡ Bagaimana Cara Kerja K-Means?", expanded=False):
             y=[0.28, 0.22, 0.34, 0.19, 0.30],
             mode="markers",
             name="Cluster 1 (Tenang/Akustik)",
-            marker=dict(size=11, color="#4EA8DE"),
+            marker=dict(size=11, color="#A7A7A7"),
         )
     )
     fig_ilustrasi.add_trace(
@@ -806,7 +793,7 @@ with st.expander("⚡ Bagaimana Cara Kerja K-Means?", expanded=False):
             text=["Centroid 0", "Centroid 1"],
             textposition="top center",
             name="Centroid",
-            marker=dict(symbol="star", size=16, color="#FFD166"),
+            marker=dict(symbol="star", size=16, color="#FFFFFF"),
         )
     )
     fig_ilustrasi.update_layout(
@@ -822,7 +809,7 @@ with st.expander("⚡ Bagaimana Cara Kerja K-Means?", expanded=False):
     )
     st.plotly_chart(fig_ilustrasi, width="stretch")
 
-with st.expander("🌳 Bagaimana Cara Kerja BIRCH & CF-Tree?", expanded=False):
+with st.expander("Bagaimana cara kerja BIRCH dan CF-Tree?", expanded=False):
     st.markdown(
         f"""
         **BIRCH (*Balanced Iterative Reducing and Clustering using Hierarchies*)** dirancang untuk dataset besar
@@ -837,7 +824,7 @@ with st.expander("🌳 Bagaimana Cara Kerja BIRCH & CF-Tree?", expanded=False):
         """
     )
 
-with st.expander("📐 Penjelasan Metrik Evaluasi (Silhouette, DBI, CH, ARI)", expanded=False):
+with st.expander("Penjelasan metrik evaluasi (Silhouette, DBI, CH, ARI)", expanded=False):
     st.markdown(
         """
         - **Silhouette Score (`-1` hingga `1`, lebih tinggi lebih baik):** Mengukur seberapa mirip suatu lagu dengan clusternya sendiri (*cohesion*) dibanding cluster terdekat lainnya (*separation*).

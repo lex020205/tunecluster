@@ -1,5 +1,5 @@
 """
-4_⚙️_Profil.py — Halaman manajemen profil pengguna, genre favorit, riwayat, & statistik personal.
+4__Profil.py — Halaman manajemen profil pengguna, genre favorit, riwayat, & statistik personal.
 """
 
 from __future__ import annotations
@@ -12,7 +12,6 @@ import plotly.express as px
 import streamlit as st
 
 from utils.auth import (
-    PASTEL_GENRE_PALETTE,
     get_current_user,
     init_session_state,
     render_footer,
@@ -32,7 +31,6 @@ from utils.spotify_embed import render_track_card
 
 st.set_page_config(
     page_title="Profil · TuneCluster",
-    page_icon="⚙️",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -42,13 +40,13 @@ render_sidebar()
 
 user = get_current_user(refresh_from_db=True)
 if user is None:
-    st.title("⚙️ Profil & Pengaturan Akun")
+    st.title("Profil & pengaturan akun")
     st.warning("Anda harus login terlebih dahulu untuk mengakses dan mengelola profil Anda.")
     try:
-        st.page_link("app.py", label="Kembali ke Halaman Utama untuk Login / Daftar", icon="🏠")
+        st.page_link("app.py", label="Kembali ke Halaman Utama untuk Login / Daftar")
     except Exception:
         st.info("Silakan kembali ke halaman utama **app** di sidebar untuk Login atau Daftar.")
-    if st.button("🏠 Pergi ke Halaman Utama", type="primary"):
+    if st.button("Pergi ke halaman utama", type="primary"):
         st.switch_page("app.py")
     render_footer()
     st.stop()
@@ -57,19 +55,19 @@ recommender = get_recommender()
 user_id = int(user["user_id"])
 user_genres = list(user.get("genres", []))
 
-st.title(f"⚙️ Profil · {html.escape(str(user.get('nama_lengkap') or user.get('username')))}")
+st.title(f"Profil · {html.escape(str(user.get('nama_lengkap') or user.get('username')))}")
 st.caption("Kelola informasi akun, preferensi genre favorit, riwayat playlist, serta statistik musik pribadi Anda.")
 
 # =============================================================================
 # SECTION 1: INFO PROFIL & FORM EDIT
 # =============================================================================
-st.subheader("👤 Info Profil")
+st.subheader("Informasi profil")
 
 col_info, col_edit = st.columns([1, 1.2], gap="large")
 
 with col_info:
     with st.container(border=True):
-        st.markdown("##### 📄 Detail Akun")
+        st.markdown("##### Detail akun")
         st.markdown(
             f"""
             <div style="line-height:1.9; font-size:0.95rem;">
@@ -85,7 +83,7 @@ with col_info:
 
 with col_edit:
     with st.form("form_edit_profil"):
-        st.markdown("##### ✏️ Edit Profil")
+        st.markdown("##### Edit profil")
         edit_nama = st.text_input(
             "Nama Lengkap",
             value=str(user.get("nama_lengkap", "")),
@@ -100,7 +98,7 @@ with col_edit:
             key="profil_edit_umur",
         )
         simpan_profil = st.form_submit_button(
-            "💾 Simpan Perubahan",
+            "Simpan perubahan",
             type="primary",
             width="stretch",
         )
@@ -126,7 +124,7 @@ st.divider()
 # =============================================================================
 # SECTION 2: GENRE FAVORIT
 # =============================================================================
-st.subheader(f"🎧 Genre Favorit ({len(user_genres)}/10)")
+st.subheader(f"Genre favorit ({len(user_genres)}/10)")
 st.caption("Pilih minimal 1 dan maksimal 10 genre favorit untuk personalisasi playlist Anda.")
 
 if not user_genres:
@@ -136,23 +134,19 @@ else:
     for start in range(0, len(user_genres), n_cols):
         row_genres = user_genres[start : start + n_cols]
         cols_g = st.columns(n_cols)
-        for offset, (col_g, genre_item) in enumerate(zip(cols_g, row_genres)):
-            idx_pal = (start + offset) % len(PASTEL_GENRE_PALETTE)
-            text_c, bg_c, border_c = PASTEL_GENRE_PALETTE[idx_pal]
+        for col_g, genre_item in zip(cols_g, row_genres):
             safe_g = html.escape(str(genre_item))
             with col_g:
                 c_tag, c_btn = st.columns([3.4, 1], vertical_alignment="center")
                 with c_tag:
                     st.markdown(
-                        f'<span class="genre-badge" style="display:block; text-align:center; '
-                        f'background-color:{bg_c}; color:{text_c}; border:1px solid {border_c}; '
-                        f'margin:0;">🎧 {safe_g}</span>',
+                        f'<span class="genre-badge">{safe_g}</span>',
                         unsafe_allow_html=True,
                     )
                 with c_btn:
                     if st.button(
-                        "❌",
-                        key=f"remove_genre_btn_{start + offset}_{genre_item}",
+                        "Hapus",
+                        key=f"remove_genre_btn_{genre_item}",
                         help=f"Hapus genre '{genre_item}'",
                         width="stretch",
                     ):
@@ -161,7 +155,7 @@ else:
                         else:
                             if remove_genre(user_id, genre_item):
                                 st.session_state["user"] = get_current_user(refresh_from_db=True)
-                                st.toast(f"Genre '{genre_item}' dihapus.", icon="🗑️")
+                                st.toast(f"Genre '{genre_item}' dihapus.")
                                 st.rerun()
 
 # Tambah genre baru
@@ -185,7 +179,7 @@ with st.container(border=True):
             )
         with col_add_btn:
             klik_tambah = st.button(
-                "➕ Tambah Genre",
+                "Tambah genre",
                 type="primary",
                 key="profil_add_genres_btn",
                 width="stretch",
@@ -203,7 +197,7 @@ with st.container(border=True):
                         berhasil += 1
                 if berhasil > 0:
                     st.session_state["user"] = get_current_user(refresh_from_db=True)
-                    st.toast(f"{berhasil} genre berhasil ditambahkan!", icon="✅")
+                    st.toast(f"{berhasil} genre berhasil ditambahkan!")
                     st.rerun()
                 else:
                     st.warning("Genre yang dipilih sudah ada di daftar favorit Anda.")
@@ -213,14 +207,14 @@ st.divider()
 # =============================================================================
 # SECTION 3: RIWAYAT REKOMENDASI (20 TERAKHIR)
 # =============================================================================
-st.subheader("🕒 Riwayat 20 Rekomendasi Terakhir")
+st.subheader("Riwayat rekomendasi")
 
 riwayat_20 = get_history(user_id, limit=20)
 katalog_lookup = recommender.katalog.set_index("track_id")
 
 if not riwayat_20:
     st.info("Belum ada riwayat rekomendasi. Buat playlist pertama Anda di halaman Rekomendasi!")
-    if st.button("🎵 Pergi ke Halaman Rekomendasi", type="primary"):
+    if st.button("Pergi ke rekomendasi", type="primary"):
         st.switch_page("pages/2_🎵_Rekomendasi.py")
 else:
     tabel_riwayat = pd.DataFrame(
@@ -251,8 +245,8 @@ else:
     track_ids_sel = riwayat_terpilih.get("rekomendasi_track_ids", [])
 
     with st.expander(
-        f"🎶 Detail Playlist: {riwayat_terpilih['aktivitas']} · {riwayat_terpilih['mood']} ({len(track_ids_sel)} lagu)",
-        expanded=True,
+        f"Detail playlist: {riwayat_terpilih['aktivitas']} · {riwayat_terpilih['mood']} ({len(track_ids_sel)} lagu)",
+        expanded=False,
     ):
         lagu_ditemukan = []
         for idx_t, tid in enumerate(track_ids_sel, start=1):
@@ -290,7 +284,7 @@ else:
         )
 
         tampilkan_player_riwayat = st.toggle(
-            "🎧 Tampilkan Kartu & Pemutar Spotify untuk Riwayat Ini",
+            "Tampilkan pemutar Spotify untuk riwayat ini",
             value=False,
             key="profil_toggle_history_player",
         )
@@ -311,7 +305,7 @@ st.divider()
 # =============================================================================
 # SECTION 4: PLAYLIST PRIBADI / LAGU TERSIMPAN
 # =============================================================================
-st.subheader("💾 Playlist Pribadi / Lagu Tersimpan")
+st.subheader("Playlist pribadi")
 saved_tracks = get_saved_tracks(user_id)
 
 if not saved_tracks:
@@ -357,39 +351,42 @@ else:
                 artists = "-"
                 genre = "-"
 
-            with st.container(border=True):
-                col_saved_info, col_saved_action = st.columns(
-                    [4, 1],
-                    vertical_alignment="center",
+            col_saved_track, col_saved_action = st.columns(
+                [5, 1],
+                vertical_alignment="center",
+            )
+            with col_saved_track:
+                render_track_card(
+                    track_name=track_name,
+                    artists=artists,
+                    genre=genre,
+                    similarity_score=100.0,
+                    track_id=track_id,
+                    show_player=True,
+                    show_full_player=False,
                 )
-                with col_saved_info:
-                    st.markdown(
-                        f"**{html.escape(track_name)}** - {html.escape(artists)}",
-                        unsafe_allow_html=True,
-                    )
-                    st.caption(
-                        f"{html.escape(genre)} · {saved['aktivitas']} · "
-                        f"{saved['mood']} · Disimpan {saved['created_at']}"
-                    )
-                with col_saved_action:
-                    if st.button(
-                        "🗑️ Hapus",
-                        key=f"profile_remove_saved_{saved['id']}",
-                        help=f"Hapus {track_name} dari lagu tersimpan",
-                        width="stretch",
-                    ):
-                        if remove_saved_track(user_id, track_id):
-                            st.toast("Lagu dihapus dari daftar tersimpan.", icon="🗑️")
-                            st.rerun()
-                        else:
-                            st.error("Lagu tersimpan tidak dapat dihapus.")
+                st.caption(
+                    f"{saved['aktivitas']} · {saved['mood']} · Disimpan {saved['created_at']}"
+                )
+            with col_saved_action:
+                if st.button(
+                    "Hapus",
+                    key=f"profile_remove_saved_{saved['id']}",
+                    help=f"Hapus {track_name} dari lagu tersimpan",
+                    width="stretch",
+                ):
+                    if remove_saved_track(user_id, track_id):
+                        st.toast("Lagu dihapus dari daftar tersimpan.")
+                        st.rerun()
+                    else:
+                        st.error("Lagu tersimpan tidak dapat dihapus.")
 
 st.divider()
 
 # =============================================================================
 # SECTION 5: STATISTIK PERSONAL
 # =============================================================================
-st.subheader("📊 Statistik Personal")
+st.subheader("Statistik personal")
 
 stats = get_user_stats(user_id)
 riwayat_semua = get_history(user_id, limit=500)
@@ -458,7 +455,7 @@ if riwayat_semua:
                 x="Kemunculan",
                 y="Genre",
                 orientation="h",
-                color_discrete_sequence=["#4EA8DE"],
+                color_discrete_sequence=["#A7A7A7"],
                 title="Top Genre pada Lagu Rekomendasi Anda",
             )
             fig_g.update_layout(
