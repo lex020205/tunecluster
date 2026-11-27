@@ -1,0 +1,21 @@
+﻿Aktivitas,Mood,Genre contoh,Cluster target,Jumlah hasil,Fallback,Jarak terdekat
+Olahraga,Senang/Happy,pop,0,5,False,0.41682672103427804
+Olahraga,Sedih/Sad,rock,0,5,False,0.5349710003436181
+Olahraga,Energik,r&b,0,5,False,0.7609725984749107
+Olahraga,Tenang/Calm,genre-tidak-terdaftar,0,5,True,0.3075376003389137
+Olahraga,Fokus,pop,0,5,False,0.868921816570836
+Belajar,Senang/Happy,rock,1,5,False,1.838268422572236
+Belajar,Sedih/Sad,r&b,1,5,False,1.9436143626996287
+Belajar,Energik,genre-tidak-terdaftar,1,5,True,0.3175246640447376
+Belajar,Tenang/Calm,pop,1,5,False,2.261589892544837
+Belajar,Fokus,rock,1,5,False,2.063796769367282
+Santai,Senang/Happy,r&b,1,5,False,1.022926261384584
+Santai,Sedih/Sad,genre-tidak-terdaftar,1,5,True,0.4365561178540011
+Santai,Energik,pop,1,5,False,1.0477791372551482
+Santai,Tenang/Calm,rock,1,5,False,0.8843814569923274
+Santai,Fokus,r&b,1,5,False,1.5118345703470557
+Perjalanan,Senang/Happy,genre-tidak-terdaftar,0,5,True,0.28429562024489513
+Perjalanan,Sedih/Sad,pop,0,5,False,0.4080152354893755
+Perjalanan,Energik,rock,0,5,False,0.6006859108915762
+Perjalanan,Tenang/Calm,r&b,0,5,False,0.5260880024839427
+Perjalanan,Fokus,genre-tidak-terdaftar,0,5,True,0.4127025088054764

@@ -5,18 +5,17 @@ spotify_embed.py — Helper untuk menampilkan Spotify embed player dan kartu lag
 from __future__ import annotations
 
 import html
-import json
-import logging
 import re
 from textwrap import dedent
-from urllib.error import URLError
-from urllib.parse import quote_plus, urlencode, urlparse
-from urllib.request import Request, urlopen
+from urllib.parse import quote_plus, urlparse
 
 import streamlit as st
 
-SPOTIFY_TRACK_ID_PATTERN = re.compile(r"^[A-Za-z0-9]{22}$")
-LOGGER = logging.getLogger(__name__)
+from utils.media_fetcher import (
+    SPOTIFY_TRACK_ID_PATTERN,
+    get_spotify_cover_url,
+    placeholder_cover_data_uri,
+)
 
 
 def is_valid_spotify_track_id(track_id: str | None) -> bool:
@@ -40,38 +39,6 @@ def get_spotify_search_url(track_name: str, artists: str) -> str:
     q_artist = quote_plus(str(artists or "").strip())
     query = f"{q_track}+{q_artist}" if q_track and q_artist else (q_track or q_artist)
     return f"https://open.spotify.com/search/{query}"
-
-
-@st.cache_data(ttl=86400, show_spinner=False)
-def get_spotify_cover_url(track_id: str) -> str | None:
-    """Fetch and cache an official album thumbnail from Spotify's public oEmbed endpoint."""
-    clean_id = str(track_id).strip() if track_id is not None else ""
-    if not is_valid_spotify_track_id(clean_id):
-        return None
-
-    track_url = f"https://open.spotify.com/track/{clean_id}"
-    oembed_url = f"https://open.spotify.com/oembed?{urlencode({'url': track_url})}"
-    request = Request(
-        oembed_url,
-        headers={"Accept": "application/json", "User-Agent": "TuneCluster/1.0"},
-    )
-    try:
-        with urlopen(request, timeout=3) as response:
-            metadata = json.loads(response.read().decode("utf-8"))
-    except (URLError, TimeoutError, OSError, ValueError) as exc:
-        LOGGER.warning("Spotify oEmbed cover lookup failed for track %s: %s", clean_id, exc)
-        return None
-
-    thumbnail_url = metadata.get("thumbnail_url") if isinstance(metadata, dict) else None
-    parsed_url = urlparse(thumbnail_url) if isinstance(thumbnail_url, str) else None
-    if (
-        parsed_url is None
-        or parsed_url.scheme != "https"
-        or parsed_url.hostname != "i.scdn.co"
-    ):
-        LOGGER.warning("Spotify oEmbed returned no valid cover URL for track %s", clean_id)
-        return None
-    return thumbnail_url
 
 
 def get_spotify_embed(track_id: str, height: int = 80) -> str:
@@ -150,6 +117,7 @@ def render_track_card(
     show_player: bool = True,
     show_full_player: bool = True,
     jarak: float | None = None,
+    cover_url: str | None = None,
 ) -> None:
     """
     Render kartu sampul album, metadata lagu, similarity score, dan pemutar opsional.
@@ -174,10 +142,21 @@ def render_track_card(
         Apakah full player dan tautan Spotify ditampilkan dalam expander.
     jarak : float | None, optional
         Jarak Euclidean fitur audio (opsional untuk info tambahan).
+    cover_url : str | None, optional
+        URL sampul yang sudah diambil oleh pipeline metadata.
     """
     safe_title = html.escape(str(track_name or "Tanpa Judul"))
     safe_artists = html.escape(str(artists or "Artis Tidak Diketahui"))
-    cover_url = get_spotify_cover_url(str(track_id)) if is_valid_spotify_track_id(track_id) else None
+    spotify_cover_url = (
+        get_spotify_cover_url(str(track_id))
+        if cover_url is None and is_valid_spotify_track_id(track_id)
+        else None
+    )
+    resolved_cover_url = (
+        cover_url
+        or spotify_cover_url
+        or placeholder_cover_data_uri(str(track_name or ""))
+    )
 
     score_pct = min(100.0, max(0.0, float(similarity_score)))
     raw_genres = [
@@ -190,10 +169,8 @@ def render_track_card(
 
     genres_label = html.escape(" · ".join(raw_genres[:2]))
     cover_html = (
-        f'<img src="{html.escape(cover_url, quote=True)}" '
+        f'<img src="{html.escape(resolved_cover_url, quote=True)}" '
         f'alt="Sampul {safe_title}" loading="lazy" decoding="async">'
-        if cover_url
-        else '<div class="tc-album-cover-placeholder">Sampul tidak tersedia</div>'
     )
 
     jarak_html = (
@@ -256,13 +233,30 @@ def render_track_card(
             )
 
 
-def render_now_playing(track_name: str, artists: str, track_id: str | None) -> None:
-    """Render a prominent Spotify player for the selected track."""
+def render_now_playing(
+    track_name: str,
+    artists: str,
+    track_id: str | None,
+    preview_url: str | None = None,
+) -> None:
+    """Render an audio preview, or the Spotify player when no preview exists."""
     st.subheader("Sedang diputar")
     with st.container(border=True):
         st.markdown(f"**{html.escape(str(track_name or 'Tanpa Judul'))}**")
         st.caption(str(artists or "Artis Tidak Diketahui"))
-        if is_valid_spotify_track_id(track_id):
+        if preview_url:
+            audio_path = urlparse(preview_url).path.lower()
+            audio_format = "audio/mp4" if audio_path.endswith(".m4a") else "audio/mpeg"
+            st.audio(preview_url, format=audio_format, autoplay=True, width="stretch")
+            st.caption("Preview singkat. Jika browser memblokir putar otomatis, tekan Play.")
+            _render_spotify_fallback_buttons(
+                track_name,
+                artists,
+                track_id,
+                pesan="Buka lagu lengkap:",
+            )
+        elif is_valid_spotify_track_id(track_id):
+            st.warning("Preview audio tidak tersedia. Anda tetap dapat memutar lagu melalui Spotify.")
             st.iframe(get_spotify_embed_url(str(track_id).strip()), width="stretch", height=162)
         else:
             st.warning("Pemutar Spotify tidak tersedia untuk lagu ini.")

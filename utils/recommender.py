@@ -375,6 +375,115 @@ class TuneClusterRecommender:
 
         return hasil
 
+    def cari_lagu(self, query: str, limit: int = 10) -> pd.DataFrame:
+        """Cari lagu berdasarkan substring judul atau artis di dalam katalog."""
+        if not isinstance(query, str):
+            raise TypeError("Parameter 'query' harus berupa string.")
+        if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:
+            raise ValueError("Parameter 'limit' harus berupa bilangan bulat >= 1.")
+
+        kolom_hasil = [
+            "track_id",
+            "track_name",
+            "artists",
+            "genre_gabungan",
+            "cluster_kmeans",
+            "nama_cluster",
+            "cluster_birch",
+            "nama_cluster_birch",
+        ]
+        query_bersih = query.strip()
+        if not query_bersih:
+            return pd.DataFrame(columns=kolom_hasil)
+
+        cocok = self.katalog["track_name"].str.contains(
+            query_bersih, case=False, regex=False, na=False
+        ) | self.katalog["artists"].str.contains(
+            query_bersih, case=False, regex=False, na=False
+        )
+        hasil = self.katalog.loc[cocok].head(limit)[
+            [
+                "track_id",
+                "track_name",
+                "artists",
+                "genre_gabungan",
+                "cluster_kmeans",
+                "cluster_birch",
+            ]
+        ].copy()
+        hasil["nama_cluster"] = hasil["cluster_kmeans"].map(
+            self.nama_cluster_map["kmeans"]
+        )
+        hasil["nama_cluster_birch"] = hasil["cluster_birch"].map(
+            self.nama_cluster_map["birch"]
+        )
+        return hasil.reindex(columns=kolom_hasil).reset_index(drop=True)
+
+    def cari_lagu_serupa(self, track_id: str, n: int = 10) -> pd.DataFrame:
+        """Cari tetangga audio terdekat berdasarkan jarak Euclidean fitur terstandarisasi."""
+        if not isinstance(track_id, str) or not track_id.strip():
+            raise ValueError("Parameter 'track_id' harus berupa string yang tidak kosong.")
+        if not isinstance(n, int) or isinstance(n, bool) or n < 1:
+            raise ValueError("Parameter 'n' harus berupa bilangan bulat >= 1.")
+
+        seed_matches = self.katalog.index[
+            self.katalog["track_id"].astype(str) == track_id.strip()
+        ]
+        if len(seed_matches) == 0:
+            raise ValueError(f"Lagu dengan track_id '{track_id}' tidak ditemukan di katalog.")
+
+        seed_idx = int(seed_matches[0])
+        jarak = np.linalg.norm(
+            self._x_katalog_scaled - self._x_katalog_scaled[seed_idx],
+            axis=1,
+        )
+        jarak[seed_idx] = np.inf
+
+        jumlah_hasil = min(n, len(self.katalog) - 1)
+        if jumlah_hasil == 0:
+            return pd.DataFrame(
+                columns=[
+                    "track_id",
+                    "track_name",
+                    "artists",
+                    "genre_gabungan",
+                    "cluster_kmeans",
+                    "nama_cluster",
+                    "cluster_birch",
+                    "nama_cluster_birch",
+                    "jarak",
+                ]
+            )
+
+        kandidat_idx = np.argpartition(jarak, jumlah_hasil - 1)[:jumlah_hasil]
+        kandidat_idx = sorted(
+            kandidat_idx.tolist(),
+            key=lambda idx: (
+                float(jarak[idx]),
+                str(self.katalog.iloc[idx]["track_name"]),
+                str(self.katalog.iloc[idx]["track_id"]),
+            ),
+        )
+
+        hasil = self.katalog.iloc[kandidat_idx][
+            [
+                "track_id",
+                "track_name",
+                "artists",
+                "genre_gabungan",
+                "cluster_kmeans",
+                "cluster_birch",
+            ]
+        ].copy()
+        hasil["nama_cluster"] = hasil["cluster_kmeans"].map(
+            self.nama_cluster_map["kmeans"]
+        )
+        hasil["nama_cluster_birch"] = hasil["cluster_birch"].map(
+            self.nama_cluster_map["birch"]
+        )
+        hasil["jarak"] = jarak[kandidat_idx]
+        return hasil.reset_index(drop=True)
+
     def rekomendasi_genre(
         self,
         genre_user: list[str] | None,

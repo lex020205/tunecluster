@@ -26,7 +26,13 @@ from utils.database import (
     save_history,
     save_track,
 )
+from utils.media_fetcher import (
+    deduplicate_recommendations,
+    fetch_recommendation_media,
+    primary_artist,
+)
 from utils.playlist_export import playlist_to_csv, playlist_to_text
+from utils.recommendation_player import render_recommendation_player
 from utils.recommender import get_recommender, normalisasi_genre
 from utils.spotify_embed import get_spotify_search_url, render_now_playing, render_track_card
 
@@ -65,6 +71,276 @@ FITUR_LABELS = {
     "acousticness": "Acousticness",
     "instrumentalness": "Instrumentalness",
 }
+
+RECOMMENDATION_PAGE_CSS = """
+<style>
+body:has(.tc-rec-scope-marker) [data-testid="stAppViewContainer"],
+body:has(.tc-rec-scope-marker) [data-testid="stMain"],
+body:has(.tc-rec-scope-marker) [data-testid="stMainBlockContainer"] {
+    background: #000000 !important;
+}
+
+body:has(.tc-rec-scope-marker) [data-testid="stMainBlockContainer"] {
+    max-width: 1440px;
+    padding-top: 1.25rem;
+}
+
+body:has(.tc-rec-scope-marker) section[data-testid="stSidebar"] {
+    background: #070707 !important;
+    border-right: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+body:has(.tc-rec-scope-marker) section[data-testid="stSidebar"] [data-testid="stPageLink-NavLink"] {
+    border-radius: 8px;
+    min-height: 44px;
+    transition: background-color 120ms ease, color 120ms ease;
+}
+
+body:has(.tc-rec-scope-marker) section[data-testid="stSidebar"] [data-testid="stPageLink-NavLink"]:hover {
+    background: rgba(255, 255, 255, 0.07);
+}
+
+body:has(.tc-rec-scope-marker) section[data-testid="stSidebar"] [data-testid="stPageLink-NavLink"][aria-current="page"] {
+    background: rgba(255, 255, 255, 0.12);
+    color: #ffffff;
+    font-weight: 600;
+}
+
+body:has(.tc-rec-scope-marker) section[data-testid="stSidebar"] [data-testid="stButton"] button {
+    min-height: 44px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+    background: #101010;
+}
+
+body:has(.tc-rec-scope-marker) .st-key-tc-rec-results-header {
+    margin: 0.5rem 0 1rem;
+}
+
+body:has(.tc-rec-scope-marker) .st-key-tc-rec-results-header [data-testid="stHorizontalBlock"] {
+    align-items: center;
+    gap: 0.8rem;
+}
+
+body:has(.tc-rec-scope-marker) .st-key-tc-rec-results-header [data-testid="stColumn"] {
+    min-width: 0;
+}
+
+body:has(.tc-rec-scope-marker) .tc-rec-results-title {
+    margin: 0;
+    color: #ffffff;
+    font-size: clamp(1.35rem, 2.2vw, 1.7rem);
+    font-weight: 700;
+    letter-spacing: -0.035em;
+    line-height: 1.2;
+}
+
+body:has(.tc-rec-scope-marker) .tc-rec-results-caption {
+    margin-top: 0.3rem;
+    color: #888888;
+    font-size: 0.82rem;
+}
+
+body:has(.tc-rec-scope-marker) .st-key-tc-rec-results-header [data-testid="stDownloadButton"] button {
+    width: max-content !important;
+    max-width: 100%;
+    min-height: 42px;
+    padding: 0 16px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 999px;
+    background: #111111;
+    color: #ffffff;
+    font-size: 0.82rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+body:has(.tc-rec-scope-marker) .st-key-tc-rec-results-header [data-testid="stDownloadButton"] {
+    display: flex;
+    justify-content: flex-end;
+}
+
+body:has(.tc-rec-scope-marker) .st-key-tc-rec-results-header [data-testid="stDownloadButton"] button:hover {
+    border-color: rgba(255, 255, 255, 0.36);
+    background: #1b1b1b;
+}
+
+body:has(.tc-rec-scope-marker) .st-key-tc-rec-grid > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] {
+    display: grid !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1.35rem 1.1rem;
+}
+
+body:has(.tc-rec-scope-marker) .st-key-tc-rec-grid > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
+    width: auto !important;
+    min-width: 0 !important;
+    flex: initial !important;
+}
+
+body:has(.tc-rec-scope-marker) div[data-testid="stVerticalBlock"][class*="st-key-tc-rec-card-"] {
+    gap: 0 !important;
+}
+
+body:has(.tc-rec-scope-marker) .tc-rec-artwork {
+    aspect-ratio: 1 / 1;
+    width: 100%;
+    overflow: hidden;
+    border-radius: 10px;
+    background: #070707;
+}
+
+body:has(.tc-rec-scope-marker) .tc-rec-artwork img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 180ms ease-out;
+}
+
+body:has(.tc-rec-scope-marker) .tc-rec-artwork:hover img {
+    transform: scale(1.025);
+}
+
+body:has(.tc-rec-scope-marker) div[class*="st-key-tc-rec-card-"] [data-testid="stHorizontalBlock"] {
+    position: relative;
+    z-index: 2;
+    height: 44px;
+    margin: -54px 0 32px;
+    padding: 0 10px;
+    gap: 8px;
+}
+
+body:has(.tc-rec-scope-marker) div[class*="st-key-tc-rec-card-"] [data-testid="stColumn"] {
+    min-width: 0;
+}
+
+body:has(.tc-rec-scope-marker) div[class*="st-key-tc-rec-card-"] [data-testid="stButton"] button {
+    display: grid;
+    place-items: center;
+    width: 44px !important;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+    margin: 0 auto;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.76);
+    color: #ffffff;
+    backdrop-filter: blur(12px);
+}
+
+body:has(.tc-rec-scope-marker) div[class*="st-key-tc-rec-card-"] [data-testid="stButton"] button [data-testid="stMarkdownContainer"] p {
+    margin: 0;
+    font-size: 0;
+    line-height: 0;
+}
+
+body:has(.tc-rec-scope-marker) div[class*="st-key-tc-rec-card-"] [data-testid="stButton"] button [data-testid="stIconMaterial"] {
+    font-size: 20px;
+}
+
+body:has(.tc-rec-scope-marker) div[class*="st-key-tc-rec-card-"] [data-testid="stButton"] button:hover {
+    border-color: rgba(255, 255, 255, 0.42);
+    background: #1b1b1b;
+}
+
+body:has(.tc-rec-scope-marker) .tc-rec-card-details {
+    min-width: 0;
+    padding: 0 1px;
+}
+
+body:has(.tc-rec-scope-marker) .tc-rec-track-title {
+    overflow: hidden;
+    color: #f5f5f5;
+    font-size: 0.96rem;
+    font-weight: 650;
+    line-height: 1.35;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+body:has(.tc-rec-scope-marker) .tc-rec-track-meta {
+    overflow: hidden;
+    margin-top: 0.18rem;
+    color: #858585;
+    font-size: 0.78rem;
+    line-height: 1.35;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+body:has(.tc-rec-scope-marker) .tc-rec-score-row {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    margin-top: 0.62rem;
+}
+
+body:has(.tc-rec-scope-marker) .tc-rec-score-track {
+    flex: 1;
+    height: 2px;
+    overflow: hidden;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.14);
+}
+
+body:has(.tc-rec-scope-marker) .tc-rec-score-fill {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: #1db954;
+}
+
+body:has(.tc-rec-scope-marker) .tc-rec-score-label {
+    flex: none;
+    color: #858585;
+    font-size: 0.68rem;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+@media (max-width: 1050px) {
+    body:has(.tc-rec-scope-marker) .st-key-tc-rec-grid > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 1.2rem 0.9rem;
+    }
+}
+
+@media (max-width: 760px) {
+    body:has(.tc-rec-scope-marker) .st-key-tc-rec-results-header > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] {
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: 0.65rem;
+    }
+
+    body:has(.tc-rec-scope-marker) .st-key-tc-rec-results-header > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:first-child {
+        grid-column: 1 / -1;
+    }
+
+    body:has(.tc-rec-scope-marker) .st-key-tc-rec-results-header > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
+        width: auto !important;
+        min-width: 0 !important;
+        flex: initial !important;
+    }
+
+    body:has(.tc-rec-scope-marker) .st-key-tc-rec-grid > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 1.1rem 0.8rem;
+    }
+
+    body:has(.tc-rec-scope-marker) .st-key-tc-rec-results-header [data-testid="stDownloadButton"] button {
+        max-width: 100%;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    body:has(.tc-rec-scope-marker) .tc-rec-artwork img {
+        transition: none;
+    }
+}
+</style>
+"""
 
 def _render_genre_badges(genres: list[str]) -> None:
     """Tampilkan daftar genre user dalam bentuk badge monokrom."""
@@ -191,18 +467,28 @@ def _render_copy_playlist_button(playlist_text: str) -> None:
         <style>
             body {{ margin: 0; }}
             button {{
-                width: 100%;
-                min-height: 40px;
-                border: 0;
-                border-radius: 8px;
-                background: #FFFFFF;
-                color: #121212;
+                display: inline-flex;
+                width: max-content;
+                max-width: 100%;
+                min-height: 42px;
+                padding: 0 12px;
+                border: 1px solid rgba(255, 255, 255, 0.16);
+                border-radius: 999px;
+                background: #111111;
+                color: #FFFFFF;
                 font-weight: 600;
+                font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+                font-size: 0.82rem;
                 cursor: pointer;
+                white-space: nowrap;
+            }}
+            button:hover {{
+                background: #1B1B1B;
+                border-color: rgba(255, 255, 255, 0.36);
             }}
         </style>
     """
-    st.components.v1.html(component_html, height=42, scrolling=False)
+    st.components.v1.html(component_html, height=44, scrolling=False)
 
 
 def _render_result_genre_filter() -> list[str]:
@@ -231,6 +517,11 @@ def _render_result_genre_filter() -> list[str]:
 
 # 1. Sidebar utama + cek login
 render_sidebar()
+st.markdown(
+    '<div class="tc-rec-scope-marker" aria-hidden="true"></div>',
+    unsafe_allow_html=True,
+)
+st.markdown(RECOMMENDATION_PAGE_CSS, unsafe_allow_html=True)
 user = get_current_user(refresh_from_db=True)
 
 if user is None:
@@ -433,6 +724,7 @@ if submit_btn:
             algoritma=algo_val,
             prioritaskan_populer=(mode_rekomendasi == "Populer / Familiar"),
         )
+        df_rekom = deduplicate_recommendations(df_rekom)
 
         # Hitung skor kemiripan: (1 - normalized distance) dalam persen
         max_dist_ref = max(4.0, float(df_rekom["jarak"].max()) * 1.1) if not df_rekom.empty else 4.0
@@ -550,38 +842,18 @@ if df_hasil is not None and meta_hasil is not None:
         )
         df_tampil = df_tampil[mask_f].reset_index(drop=True)
 
+    media_by_track_id = {}
     if not df_tampil.empty:
-        st.markdown("### Pilihan utama")
-        top_picks = df_tampil.head(3)
-        pick_columns = st.columns(len(top_picks))
-        for pick_rank, (_, pick) in enumerate(top_picks.iterrows(), start=1):
-            with pick_columns[pick_rank - 1]:
-                render_track_card(
-                    track_name=str(pick["track_name"]),
-                    artists=str(pick["artists"]),
-                    genre=str(pick["genre_gabungan"]),
-                    similarity_score=float(pick["skor_kemiripan"]),
-                    track_id=str(pick["track_id"]),
-                    rank=pick_rank,
-                    show_player=False,
-                    show_full_player=False,
-                    jarak=float(pick["jarak"]),
-                )
-
-    col_hdr, col_shuffle = st.columns([3, 1], vertical_alignment="center")
-    with col_hdr:
-        st.markdown(f"#### Daftar lagu ({len(df_tampil)})")
-    with col_shuffle:
-        if st.button(
-            "Acak playlist",
-            key="btn_shuffle_playlist",
-            width="stretch",
-            disabled=df_hasil.empty,
-        ):
-            st.session_state["last_rekomendasi"] = df_hasil.sample(frac=1).reset_index(drop=True)
-            st.rerun()
+        track_ids = [str(track_id) for track_id in df_tampil["track_id"]]
+        fetched_media = fetch_recommendation_media(df_tampil.to_dict(orient="records"))
+        media_by_track_id = dict(zip(track_ids, fetched_media))
 
     if df_tampil.empty:
+        with st.container(key="tc-rec-results-header"):
+            st.markdown(
+                '<h2 class="tc-rec-results-title">Hasil rekomendasi</h2>',
+                unsafe_allow_html=True,
+            )
         st.info("Tidak ada lagu yang cocok dengan filter di atas. Kosongkan filter untuk melihat semua lagu.")
     else:
         saved_track_ids = {
@@ -593,77 +865,161 @@ if df_hasil is not None and meta_hasil is not None:
             get_spotify_search_url(str(row["track_name"]), str(row["artists"]))
             for _, row in df_export.iterrows()
         ]
-        col_copy, col_csv = st.columns(2)
-        with col_copy:
-            _render_copy_playlist_button(playlist_to_text(df_export))
-        with col_csv:
-            st.download_button(
-                "Unduh CSV",
-                data=playlist_to_csv(df_export),
-                file_name="tunecluster_playlist.csv",
-                mime="text/csv; charset=utf-8",
-                key="btn_download_playlist_csv",
-                width="stretch",
-            )
 
-        track_columns = st.columns(4, gap="medium")
-        for position, (_, row) in enumerate(df_tampil.iterrows()):
-            track_id = str(row["track_id"])
-            with track_columns[position % len(track_columns)]:
-                render_track_card(
-                    track_name=str(row["track_name"]),
-                    artists=str(row["artists"]),
-                    genre=str(row["genre_gabungan"]),
-                    similarity_score=float(row["skor_kemiripan"]),
-                    track_id=track_id,
-                    rank=position + 1,
-                    show_player=False,
-                    show_full_player=False,
-                    jarak=float(row["jarak"]),
+        with st.container(key="tc-rec-results-header"):
+            col_title, col_copy, col_csv = st.columns(
+                [5, 1.4, 1.4],
+                vertical_alignment="center",
+            )
+            with col_title:
+                st.markdown(
+                    f"""
+                    <div>
+                        <h2 class="tc-rec-results-title">Hasil rekomendasi</h2>
+                        <div class="tc-rec-results-caption">{len(df_tampil)} lagu untuk playlist Anda</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
                 )
-                action_columns = st.columns(2, gap="small")
-                with action_columns[0]:
-                    if st.button(
-                        "Putar",
-                        key=f"play_recommended_track_{track_id}",
-                        width="stretch",
-                    ):
-                        st.session_state["recommendation_now_playing"] = {
-                            "track_id": track_id,
-                            "track_name": str(row["track_name"]),
-                            "artists": str(row["artists"]),
-                        }
-                with action_columns[1]:
-                    if track_id in saved_track_ids:
-                        if st.button(
-                            "Tersimpan",
-                            key=f"remove_saved_track_{track_id}",
-                            width="stretch",
-                        ):
-                            if remove_saved_track(int(user["user_id"]), track_id):
-                                st.toast("Lagu dihapus dari daftar tersimpan.")
-                                st.rerun()
-                            else:
-                                st.error("Lagu tersimpan tidak dapat dihapus.")
-                    elif st.button(
-                        "Simpan",
-                        key=f"save_track_{track_id}",
-                        width="stretch",
-                    ):
-                        if save_track(
-                            user_id=int(user["user_id"]),
-                            track_id=track_id,
-                            aktivitas=str(meta_hasil["aktivitas"]),
-                            mood=str(meta_hasil["mood"]),
-                        ):
-                            st.toast("Lagu tersimpan di Profil Anda.")
-                            st.rerun()
-                        else:
-                            st.info("Lagu ini sudah tersimpan.")
+            with col_copy:
+                _render_copy_playlist_button(playlist_to_text(df_export))
+            with col_csv:
+                st.download_button(
+                    "Unduh CSV",
+                    data=playlist_to_csv(df_export),
+                    file_name="tunecluster_playlist.csv",
+                    mime="text/csv; charset=utf-8",
+                    key="btn_download_playlist_csv",
+                    width="stretch",
+                )
+
+        col_shuffle, _ = st.columns([1, 3])
+        with col_shuffle:
+            if st.button(
+                "Acak playlist",
+                key="btn_shuffle_playlist",
+                width="stretch",
+                disabled=df_hasil.empty,
+            ):
+                st.session_state["last_rekomendasi"] = df_hasil.sample(frac=1).reset_index(drop=True)
+                st.rerun()
+
+        render_recommendation_player(
+            [
+                {
+                    "track_id": str(row["track_id"]),
+                    "track_name": str(row["track_name"]),
+                    "artists": primary_artist(str(row["artists"])),
+                    "cover_url": media_by_track_id[str(row["track_id"])]["cover_url"],
+                    "preview_url": media_by_track_id[str(row["track_id"])]["preview_url"],
+                    "spotify_url": str(row["spotify_search_url"]),
+                }
+                for _, row in df_export.iterrows()
+            ]
+        )
+
+        with st.container(key="tc-rec-grid"):
+            track_columns = st.columns(4, gap="medium")
+            for position, (_, row) in enumerate(df_tampil.iterrows()):
+                track_id = str(row["track_id"])
+                track_name = str(row["track_name"])
+                artists = str(row["artists"])
+                genre = str(row["genre_gabungan"])
+                primary = primary_artist(artists)
+                score = min(100.0, max(0.0, float(row["skor_kemiripan"])))
+                distance = float(row["jarak"])
+                cover_url = media_by_track_id[track_id]["cover_url"]
+                title_attr = html.escape(track_name, quote=True)
+                safe_title = html.escape(track_name)
+                safe_artist_genre = html.escape(f"{primary} · {genre}", quote=True)
+                safe_cover_url = html.escape(cover_url, quote=True)
+                popularity_html = ""
                 if meta_hasil.get("prioritaskan_populer", False):
                     popularity = float(row["popularity"])
                     if math.isfinite(popularity):
-                        st.caption(f"Popularitas Spotify: {popularity:.0f}/100")
+                        popularity_html = (
+                            '<div class="tc-rec-track-meta">'
+                            f"Popularitas Spotify {popularity:.0f}/100</div>"
+                        )
+
+                with track_columns[position % len(track_columns)]:
+                    with st.container(key=f"tc-rec-card-{track_id}"):
+                        st.markdown(
+                            f"""
+                            <div class="tc-rec-artwork">
+                                <img src="{safe_cover_url}" alt="Sampul {safe_title}"
+                                     loading="lazy" decoding="async">
+                            </div>
+                            """,
+                            unsafe_allow_html=True,
+                        )
+                        play_col, save_col = st.columns([1, 1], gap="small")
+                        with play_col:
+                            if st.button(
+                                "Putar",
+                                key=f"play_recommended_track_{track_id}",
+                                icon=":material/play_arrow:",
+                                width="stretch",
+                                help=f"Putar {track_name}",
+                            ):
+                                st.session_state["recommendation_now_playing"] = {
+                                    "track_id": track_id,
+                                    "track_name": track_name,
+                                    "artists": artists,
+                                    "preview_url": media_by_track_id[track_id]["preview_url"],
+                                }
+                        with save_col:
+                            if track_id in saved_track_ids:
+                                if st.button(
+                                    "Tersimpan",
+                                    key=f"remove_saved_track_{track_id}",
+                                    icon=":material/bookmark_added:",
+                                    width="stretch",
+                                    help="Hapus dari lagu tersimpan",
+                                ):
+                                    if remove_saved_track(int(user["user_id"]), track_id):
+                                        st.toast("Lagu dihapus dari daftar tersimpan.")
+                                        st.rerun()
+                                    else:
+                                        st.error("Lagu tersimpan tidak dapat dihapus.")
+                            elif st.button(
+                                "Simpan",
+                                key=f"save_track_{track_id}",
+                                icon=":material/bookmark_add:",
+                                width="stretch",
+                                help="Simpan ke Profil Anda",
+                            ):
+                                if save_track(
+                                    user_id=int(user["user_id"]),
+                                    track_id=track_id,
+                                    aktivitas=str(meta_hasil["aktivitas"]),
+                                    mood=str(meta_hasil["mood"]),
+                                ):
+                                    st.toast("Lagu tersimpan di Profil Anda.")
+                                    st.rerun()
+                                else:
+                                    st.info("Lagu ini sudah tersimpan.")
+
+                        st.markdown(
+                            f"""
+                            <div class="tc-rec-card-details">
+                                <div class="tc-rec-track-title" title="{title_attr}">{safe_title}</div>
+                                <div class="tc-rec-track-meta" title="{safe_artist_genre}">
+                                    {safe_artist_genre}
+                                </div>
+                                <div class="tc-rec-score-row">
+                                    <div class="tc-rec-score-track" role="progressbar"
+                                         aria-label="Kemiripan" aria-valuemin="0"
+                                         aria-valuemax="100" aria-valuenow="{score:.1f}">
+                                        <span class="tc-rec-score-fill" style="width:{score:.1f}%"></span>
+                                    </div>
+                                    <span class="tc-rec-score-label">{score:.0f}% · {distance:.2f}</span>
+                                </div>
+                                {popularity_html}
+                            </div>
+                            """,
+                            unsafe_allow_html=True,
+                        )
 
         now_playing = st.session_state.get("recommendation_now_playing")
         if now_playing:
@@ -671,6 +1027,7 @@ if df_hasil is not None and meta_hasil is not None:
                 track_name=now_playing["track_name"],
                 artists=now_playing["artists"],
                 track_id=now_playing["track_id"],
+                preview_url=now_playing.get("preview_url"),
             )
 
 render_footer()

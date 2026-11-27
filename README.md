@@ -22,6 +22,8 @@ Tambahkan screenshot aplikasi pada `assets/screenshot.png`, lalu ganti placehold
 
 - Rekomendasi playlist berdasarkan aktivitas, mood, dan genre favorit.
 - Opsi untuk mengutamakan lagu populer/familiar pada hasil rekomendasi tanpa mengubah perhitungan clustering.
+- Pencarian lagu/artis di katalog dengan player Spotify dan rekomendasi lagu serupa berdasarkan jarak Euclidean fitur audio.
+- Ekspor playlist ke clipboard atau CSV, serta tautan pencarian Spotify untuk setiap lagu.
 - Pilihan model clustering K-Means dan BIRCH.
 - Profil pengguna, pengelolaan genre favorit, riwayat playlist, serta playlist pribadi untuk menyimpan dan menghapus lagu rekomendasi dengan filter aktivitas dan mood.
 - Halaman analisis berisi metrik evaluasi dan visualisasi interaktif.
