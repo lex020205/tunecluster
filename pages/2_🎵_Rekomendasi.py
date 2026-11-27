@@ -84,7 +84,28 @@ body:has(.tc-rec-scope-marker) [data-testid="stMainBlockContainer"] {
 body:has(.tc-rec-scope-marker) [data-testid="stMainBlockContainer"] {
     max-width: 1440px;
     padding-top: 1.25rem;
-    padding-bottom: 110px;
+    padding-bottom: 190px;
+}
+
+body:has(.tc-rec-scope-marker) .st-key-tc-recommendation-player-host {
+    position: fixed !important;
+    z-index: 99999;
+    left: 50%;
+    bottom: calc(16px + env(safe-area-inset-bottom));
+    width: min(820px, calc(100vw - 32px));
+    height: 170px;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible;
+    pointer-events: auto;
+    transform: translateX(-50%);
+}
+
+body:has(.tc-rec-scope-marker) .st-key-tc-recommendation-player-host iframe {
+    display: block;
+    width: 100% !important;
+    height: 170px !important;
+    border: 0;
 }
 
 body:has(.tc-rec-scope-marker) section[data-testid="stSidebar"] {
@@ -541,18 +562,19 @@ def _render_result_genre_filter(user_genres: list[str]) -> str | None:
     profile_changed = list(previous_genres or []) != profile_genres
     recommendations_changed = st.session_state.pop("_reset_filter_genre", False)
     if profile_changed or recommendations_changed:
-        st.session_state.pop("filter_genre_hasil", None)
+        st.session_state["filter_genre_rekomendasi"] = None
     st.session_state["_filter_genres_profile"] = profile_genres
 
     if len(profile_genres) <= 1:
-        st.session_state.pop("filter_genre_hasil", None)
+        st.session_state.pop("filter_genre_rekomendasi", None)
         return None
 
     return st.selectbox(
         "Filter genre",
         options=profile_genres,
-        index=0,
-        key="filter_genre_hasil",
+        index=None,
+        placeholder="Semua genre pilihan (klik untuk pilih 1 genre)",
+        key="filter_genre_rekomendasi",
     )
 
 
@@ -686,7 +708,7 @@ with st.expander(
                             f"Cluster K-Means {int(row['cluster_kmeans'])} · {row['nama_cluster']} "
                             f"│ Cluster BIRCH {int(row['cluster_birch'])} · {row['nama_cluster_birch']}"
                         )
-                        render_track_card(
+                        if render_track_card(
                             track_name=str(row["track_name"]),
                             artists=str(row["artists"]),
                             genre=str(row["genre_gabungan"]),
@@ -699,7 +721,9 @@ with st.expander(
                             preview_url=media["preview_url"],
                             shared_player=True,
                             player_key=card_key,
-                        )
+                        ):
+                            st.session_state["_player_selected_track_id"] = track_id
+                            st.rerun()
                         if st.button(
                             "Cari yang mirip",
                             key=f"cari_mirip_{track_id}",
@@ -745,7 +769,7 @@ with st.expander(
                             f"Cluster K-Means {int(row['cluster_kmeans'])} · {row['nama_cluster']} "
                             f"│ Cluster BIRCH {int(row['cluster_birch'])} · {row['nama_cluster_birch']}"
                         )
-                        render_track_card(
+                        if render_track_card(
                             track_name=str(row["track_name"]),
                             artists=str(row["artists"]),
                             genre=str(row["genre_gabungan"]),
@@ -762,7 +786,9 @@ with st.expander(
                             preview_url=media["preview_url"],
                             shared_player=True,
                             player_key=card_key,
-                        )
+                        ):
+                            st.session_state["_player_selected_track_id"] = str(row["track_id"])
+                            st.rerun()
 
 
 # 3. Filter rekomendasi
@@ -1063,13 +1089,15 @@ if df_hasil is not None and meta_hasil is not None:
                         )
                         play_col, save_col = st.columns([1, 1], gap="small")
                         with play_col:
-                            st.button(
+                            if st.button(
                                 "Putar",
                                 key=f"play_recommended_track_{track_id}",
                                 icon=":material/play_arrow:",
                                 width="stretch",
-                                help=f"Putar {track_name}",
-                            )
+                                help=f"Pilih {track_name} di pemutar bawah",
+                            ):
+                                st.session_state["_player_selected_track_id"] = track_id
+                                st.rerun()
                         with save_col:
                             if track_id in saved_track_ids:
                                 if st.button(
@@ -1123,7 +1151,10 @@ if df_hasil is not None and meta_hasil is not None:
                             unsafe_allow_html=True,
                         )
 
-if player_default_track_id is None and player_tracks_by_id:
+selected_player_track_id = st.session_state.get("_player_selected_track_id")
+if selected_player_track_id in player_tracks_by_id:
+    player_default_track_id = selected_player_track_id
+elif player_default_track_id is None and player_tracks_by_id:
     player_default_track_id = next(iter(player_tracks_by_id))
 render_recommendation_player(
     list(player_tracks_by_id.values()),

@@ -1,8 +1,9 @@
 import json
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from utils.recommendation_player import (
     PLAYER_COMPONENT_HTML,
+    PLAYER_FRAME_HEIGHT,
     render_recommendation_player,
     serialize_player_tracks,
 )
@@ -37,32 +38,39 @@ def test_player_track_payload_is_script_safe_and_preserves_track_data() -> None:
     ]
 
 
-def test_player_uses_one_shared_audio_element_and_real_volume_controls() -> None:
-    assert 'doc.createElement("audio")' in PLAYER_COMPONENT_HTML
+def test_player_is_self_contained_and_uses_svg_controls() -> None:
+    assert "window.parent" not in PLAYER_COMPONENT_HTML
+    assert "const audio = new Audio()" in PLAYER_COMPONENT_HTML
     assert 'audio.addEventListener("timeupdate"' in PLAYER_COMPONENT_HTML
     assert 'audio.addEventListener("loadedmetadata"' in PLAYER_COMPONENT_HTML
-    assert 'data-player-volume aria-label="Volume"' in PLAYER_COMPONENT_HTML
-    assert 'doc.addEventListener("input", handlePlayerInput, true)' in PLAYER_COMPONENT_HTML
-    assert 'doc.addEventListener("change", handlePlayerChange, true)' in PLAYER_COMPONENT_HTML
-    assert 'localStorage.setItem("tc_volume"' in PLAYER_COMPONENT_HTML
-    assert "Math.min(1, Math.max(0, parsedVolume))" in PLAYER_COMPONENT_HTML
-    assert "bar.hidden = !active" in PLAYER_COMPONENT_HTML
-    assert "tracks[0]" in PLAYER_COMPONENT_HTML
-    assert "Preview audio tidak tersedia untuk lagu ini" in PLAYER_COMPONENT_HTML
-    assert "[TuneCluster player] play requested" in PLAYER_COMPONENT_HTML
-    assert "audio.src = previewUrl" in PLAYER_COMPONENT_HTML
-    assert "function primaryPreviewUrl(track)" in PLAYER_COMPONENT_HTML
-    assert "retrying with fallback preview" in PLAYER_COMPONENT_HTML
-    assert 'doc.addEventListener("click", handleDocumentClick, true)' in PLAYER_COMPONENT_HTML
-    assert "player.version > playerVersion" in PLAYER_COMPONENT_HTML
-    assert "player.version !== playerVersion" in PLAYER_COMPONENT_HTML
-    assert "audio.error.code === 1" in PLAYER_COMPONENT_HTML
-    assert "body:not(:has(.tc-rec-scope-marker)) #tc-recommendation-player" in PLAYER_COMPONENT_HTML
-    assert "host.setInterval(reconcilePage, 500)" in PLAYER_COMPONENT_HTML
-    assert "player.update(incomingTracks, incomingDefaultTrackId)" in PLAYER_COMPONENT_HTML
+    assert 'audio.addEventListener("error"' in PLAYER_COMPONENT_HTML
+    assert 'data-player-action="prev"' in PLAYER_COMPONENT_HTML
+    assert 'data-player-action="toggle"' in PLAYER_COMPONENT_HTML
+    assert 'data-player-action="next"' in PLAYER_COMPONENT_HTML
+    assert '<svg viewBox="0 0 24 24">' in PLAYER_COMPONENT_HTML
+    assert 'aria-label="Lagu sebelumnya"' in PLAYER_COMPONENT_HTML
+    assert 'aria-label="Lagu berikutnya"' in PLAYER_COMPONENT_HTML
+    assert 'min="0" max="1" step="0.01"' in PLAYER_COMPONENT_HTML
+    assert "flex: 0 0 96px" in PLAYER_COMPONENT_HTML
+    assert 'refs.volume.addEventListener("input"' in PLAYER_COMPONENT_HTML
+    assert 'refs.volume.addEventListener("change"' in PLAYER_COMPONENT_HTML
+    assert 'refs.mute.addEventListener("click", toggleMute)' in PLAYER_COMPONENT_HTML
+    assert 'window.localStorage.setItem("tc_volume"' in PLAYER_COMPONENT_HTML
+    assert 'storedVolumeValue === null' in PLAYER_COMPONENT_HTML
+    assert "audio.volume > 0 && !audio.muted" in PLAYER_COMPONENT_HTML
+    assert "audio.muted = volume === 0" in PLAYER_COMPONENT_HTML
 
 
-def test_player_renders_selected_default_track_into_component() -> None:
+def test_missing_or_failed_preview_triggers_fresh_itunes_lookup() -> None:
+    assert "fetchFreshITunesPreview(track)" in PLAYER_COMPONENT_HTML
+    assert "encodeURIComponent(" in PLAYER_COMPONENT_HTML
+    assert "https://itunes.apple.com/search?term=${query}&entity=song&limit=3" in PLAYER_COMPONENT_HTML
+    assert 'cache: "no-store"' in PLAYER_COMPONENT_HTML
+    assert "recoverPreview(currentTrack, playRequestId, audio.src)" in PLAYER_COMPONENT_HTML
+    assert "Preview tidak tersedia" in PLAYER_COMPONENT_HTML
+
+
+def test_player_renders_in_a_fixed_parent_container() -> None:
     track = {
         "track_id": "track-1",
         "track_name": "Track",
@@ -70,11 +78,34 @@ def test_player_renders_selected_default_track_into_component() -> None:
         "preview_url": "https://audio.example/preview.m4a",
         "fallback_preview_url": "https://cdn-preview.dzcdn.net/preview.mp3",
     }
+    container_context = MagicMock()
 
-    with patch("utils.recommendation_player.st.components.v1.html") as component:
+    with (
+        patch("utils.recommendation_player.st.components.v1.html") as component,
+        patch(
+            "utils.recommendation_player.st.container",
+            return_value=container_context,
+        ) as container,
+    ):
         render_recommendation_player([track], default_track_id="track-1")
 
+    container.assert_called_once_with(key="tc-recommendation-player-host")
     component_html = component.call_args.args[0]
-    assert 'const incomingDefaultTrackId = "track-1";' in component_html
+    assert 'const defaultTrackId = "track-1";' in component_html
     assert '"fallback_preview_url":"https://cdn-preview.dzcdn.net/preview.mp3"' in component_html
     assert "__TRACKS_JSON__" not in component_html
+    assert component.call_args.kwargs == {
+        "height": PLAYER_FRAME_HEIGHT,
+        "scrolling": False,
+    }
+
+
+def test_empty_player_does_not_render_an_empty_fixed_iframe() -> None:
+    with (
+        patch("utils.recommendation_player.st.components.v1.html") as component,
+        patch("utils.recommendation_player.st.container") as container,
+    ):
+        render_recommendation_player([])
+
+    component.assert_not_called()
+    container.assert_not_called()

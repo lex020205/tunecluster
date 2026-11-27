@@ -87,6 +87,7 @@ def test_shared_player_card_without_preview_keeps_play_control_and_spotify_fallb
         patch("utils.spotify_embed.st.button") as button,
         patch("utils.spotify_embed.st.iframe") as iframe,
     ):
+        button.return_value = False
         render_track_card(
             "Unknown",
             "Artist",
@@ -101,3 +102,28 @@ def test_shared_player_card_without_preview_keeps_play_control_and_spotify_fallb
     iframe.assert_not_called()
     assert button.call_args.kwargs["key"] == "play_recommended_track_search_1"
     assert any("Buka di Spotify" in call.args[0] for call in markdown.call_args_list)
+
+
+def test_shared_player_card_reports_track_selection() -> None:
+    from utils.spotify_embed import render_track_card
+
+    with (
+        patch("utils.spotify_embed.st.container"),
+        patch("utils.spotify_embed.st.markdown"),
+        patch("utils.spotify_embed.st.button", return_value=True),
+        patch("utils.spotify_embed.st.iframe") as iframe,
+    ):
+        selected = render_track_card(
+            "Comedy",
+            "Gen Hoshino",
+            "j-pop",
+            100,
+            "a" * 22,
+            cover_url="https://i.scdn.co/image/test-cover",
+            preview_url="https://audio-ssl.itunes.apple.com/preview.m4a",
+            shared_player=True,
+            player_key="search_0",
+        )
+
+    assert selected is True
+    iframe.assert_not_called()

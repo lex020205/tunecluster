@@ -121,9 +121,9 @@ def render_track_card(
     preview_url: str | None = None,
     shared_player: bool = False,
     player_key: str | None = None,
-) -> None:
+) -> bool:
     """
-    Render kartu sampul album, metadata lagu, similarity score, dan pemutar opsional.
+    Render kartu lagu dan kembalikan True jika trek pemutar bersama dipilih.
 
     Parameters
     ----------
@@ -209,13 +209,14 @@ def render_track_card(
         )
 
         if shared_player:
-            st.button(
+            if st.button(
                 "Putar",
                 key=f"play_recommended_track_{card_key}",
                 icon=":material/play_arrow:",
                 width="stretch",
                 help=f"Putar {track_name}",
-            )
+            ):
+                return True
             if not preview_url:
                 st.caption("Preview tidak tersedia.")
                 _render_spotify_fallback_buttons(
@@ -257,6 +258,7 @@ def render_track_card(
                 None,
                 pesan="Putar langsung di Spotify:",
             )
+    return False
 
 
 def render_now_playing(
