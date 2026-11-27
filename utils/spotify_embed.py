@@ -118,6 +118,9 @@ def render_track_card(
     show_full_player: bool = True,
     jarak: float | None = None,
     cover_url: str | None = None,
+    preview_url: str | None = None,
+    shared_player: bool = False,
+    player_key: str | None = None,
 ) -> None:
     """
     Render kartu sampul album, metadata lagu, similarity score, dan pemutar opsional.
@@ -144,6 +147,12 @@ def render_track_card(
         Jarak Euclidean fitur audio (opsional untuk info tambahan).
     cover_url : str | None, optional
         URL sampul yang sudah diambil oleh pipeline metadata.
+    preview_url : str | None, optional
+        URL preview audio untuk pemutar bersama.
+    shared_player : bool, default=False
+        Gunakan pemutar HTML5 bersama sebagai pengganti Spotify embed.
+    player_key : str | None, optional
+        Kunci unik tombol kartu untuk dipetakan ke trek di pemutar bersama.
     """
     safe_title = html.escape(str(track_name or "Tanpa Judul"))
     safe_artists = html.escape(str(artists or "Artis Tidak Diketahui"))
@@ -179,7 +188,8 @@ def render_track_card(
         else ""
     )
 
-    with st.container(border=True):
+    card_key = player_key or str(track_id or rank or "unknown")
+    with st.container(border=True, key=f"tc-media-card-{card_key}"):
         st.markdown(
             dedent(f"""
             <div class="tc-album-card">
@@ -198,7 +208,24 @@ def render_track_card(
             unsafe_allow_html=True,
         )
 
-        if is_valid_spotify_track_id(track_id):
+        if shared_player:
+            if preview_url:
+                st.button(
+                    "Putar",
+                    key=f"play_recommended_track_{card_key}",
+                    icon=":material/play_arrow:",
+                    width="stretch",
+                    help=f"Putar {track_name}",
+                )
+            else:
+                st.caption("Preview tidak tersedia.")
+                _render_spotify_fallback_buttons(
+                    track_name,
+                    artists,
+                    track_id,
+                    pesan="Buka lagu lengkap:",
+                )
+        elif is_valid_spotify_track_id(track_id):
             clean_id = str(track_id).strip()
             if show_player:
                 try:

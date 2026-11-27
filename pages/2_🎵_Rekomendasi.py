@@ -7,6 +7,7 @@ from __future__ import annotations
 import html
 import json
 import math
+from collections.abc import Mapping, Sequence
 from textwrap import dedent
 from typing import Any
 
@@ -34,7 +35,7 @@ from utils.media_fetcher import (
 from utils.playlist_export import playlist_to_csv, playlist_to_text
 from utils.recommendation_player import render_recommendation_player
 from utils.recommender import get_recommender, normalisasi_genre
-from utils.spotify_embed import get_spotify_search_url, render_now_playing, render_track_card
+from utils.spotify_embed import get_spotify_search_url, render_track_card
 
 st.set_page_config(
     page_title="Rekomendasi · TuneCluster",
@@ -83,6 +84,7 @@ body:has(.tc-rec-scope-marker) [data-testid="stMainBlockContainer"] {
 body:has(.tc-rec-scope-marker) [data-testid="stMainBlockContainer"] {
     max-width: 1440px;
     padding-top: 1.25rem;
+    padding-bottom: 110px;
 }
 
 body:has(.tc-rec-scope-marker) section[data-testid="stSidebar"] {
@@ -142,17 +144,30 @@ body:has(.tc-rec-scope-marker) .tc-rec-results-caption {
 }
 
 body:has(.tc-rec-scope-marker) .st-key-tc-rec-results-header [data-testid="stDownloadButton"] button {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
     width: max-content !important;
     max-width: 100%;
-    min-height: 42px;
-    padding: 0 16px;
+    height: 40px !important;
+    min-height: 40px !important;
+    padding: 0 20px !important;
     border: 1px solid rgba(255, 255, 255, 0.16);
     border-radius: 999px;
     background: #111111;
     color: #ffffff;
     font-size: 0.82rem;
     font-weight: 600;
+    line-height: 1 !important;
     white-space: nowrap;
+    box-sizing: border-box;
+}
+
+body:has(.tc-rec-scope-marker) .st-key-tc-rec-results-header [data-testid="stDownloadButton"] button p,
+body:has(.tc-rec-scope-marker) .st-key-tc-rec-results-header [data-testid="stDownloadButton"] button div {
+    margin: 0 !important;
+    padding: 0 !important;
+    line-height: 1 !important;
 }
 
 body:has(.tc-rec-scope-marker) .st-key-tc-rec-results-header [data-testid="stDownloadButton"] {
@@ -171,6 +186,26 @@ body:has(.tc-rec-scope-marker) .st-key-tc-rec-grid > div[data-testid="stLayoutWr
     gap: 1.35rem 1.1rem;
 }
 
+body:has(.tc-rec-scope-marker) .st-key-tc-search-grid > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"],
+body:has(.tc-rec-scope-marker) .st-key-tc-similar-grid > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+}
+
+body:has(.tc-rec-scope-marker) .st-key-tc-search-grid > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"],
+body:has(.tc-rec-scope-marker) .st-key-tc-similar-grid > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
+    width: auto !important;
+    min-width: 0 !important;
+    flex: initial !important;
+}
+
+body:has(.tc-rec-scope-marker) div[data-testid="stVerticalBlock"][class*="st-key-tc-media-card-"] {
+    width: 100%;
+    max-width: 240px;
+    margin-inline: auto;
+}
+
 body:has(.tc-rec-scope-marker) .st-key-tc-rec-grid > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
     width: auto !important;
     min-width: 0 !important;
@@ -184,6 +219,8 @@ body:has(.tc-rec-scope-marker) div[data-testid="stVerticalBlock"][class*="st-key
 body:has(.tc-rec-scope-marker) .tc-rec-artwork {
     aspect-ratio: 1 / 1;
     width: 100%;
+    max-width: 240px;
+    margin-inline: auto;
     overflow: hidden;
     border-radius: 10px;
     background: #070707;
@@ -305,6 +342,7 @@ body:has(.tc-rec-scope-marker) .tc-rec-score-label {
         grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 1.2rem 0.9rem;
     }
+
 }
 
 @media (max-width: 760px) {
@@ -467,11 +505,14 @@ def _render_copy_playlist_button(playlist_text: str) -> None:
         <style>
             body {{ margin: 0; }}
             button {{
-                display: inline-flex;
+                display: inline-flex !important;
+                align-items: center !important;
+                justify-content: center !important;
                 width: max-content;
                 max-width: 100%;
-                min-height: 42px;
-                padding: 0 12px;
+                height: 40px !important;
+                min-height: 40px !important;
+                padding: 0 20px !important;
                 border: 1px solid rgba(255, 255, 255, 0.16);
                 border-radius: 999px;
                 background: #111111;
@@ -479,8 +520,10 @@ def _render_copy_playlist_button(playlist_text: str) -> None:
                 font-weight: 600;
                 font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
                 font-size: 0.82rem;
+                line-height: 1 !important;
                 cursor: pointer;
                 white-space: nowrap;
+                box-sizing: border-box;
             }}
             button:hover {{
                 background: #1B1B1B;
@@ -513,6 +556,35 @@ def _render_result_genre_filter() -> list[str]:
         placeholder="Semua genre",
         key="filter_genre_hasil",
     )
+
+
+def _register_player_tracks(
+    rows: Sequence[Mapping[str, Any]],
+    media_rows: Sequence[Mapping[str, object]],
+    card_keys: list[str],
+    player_tracks: dict[str, dict[str, Any]],
+) -> None:
+    """Merge each rendered card into the single browser-side player playlist."""
+    for row, media, card_key in zip(rows, media_rows, card_keys):
+        track_id = str(row.get("track_id") or row.get("spotify_id") or "")
+        if not track_id:
+            continue
+        track_name = str(row.get("track_name") or "Tanpa Judul")
+        artists = primary_artist(str(row.get("artists") or ""))
+        track = player_tracks.get(track_id)
+        if track is None:
+            track = {
+                "track_id": track_id,
+                "track_name": track_name,
+                "artists": artists,
+                "cover_url": str(media["cover_url"]),
+                "preview_url": media["preview_url"],
+                "spotify_url": get_spotify_search_url(track_name, artists),
+                "card_keys": [],
+            }
+            player_tracks[track_id] = track
+        if card_key not in track["card_keys"]:
+            track["card_keys"].append(card_key)
 
 
 # 1. Sidebar utama + cek login
@@ -551,6 +623,7 @@ st.title(f"Rekomendasi untuk {nama_user}")
 st.markdown("##### Genre favorit")
 _render_genre_badges(user_genres)
 st.divider()
+player_tracks_by_id: dict[str, dict[str, Any]] = {}
 
 with st.expander(
     "Cari lagu di katalog",
@@ -590,28 +663,50 @@ with st.expander(
         elif hasil_cari_lagu.empty:
             st.info("Tidak ada lagu yang cocok. Coba kata kunci lain.")
         else:
-            for idx, row in hasil_cari_lagu.iterrows():
-                st.caption(
-                    f"Cluster K-Means {int(row['cluster_kmeans'])} · {row['nama_cluster']} "
-                    f"│ Cluster BIRCH {int(row['cluster_birch'])} · {row['nama_cluster_birch']}"
-                )
-                render_track_card(
-                    track_name=str(row["track_name"]),
-                    artists=str(row["artists"]),
-                    genre=str(row["genre_gabungan"]),
-                    similarity_score=100.0,
-                    track_id=str(row["track_id"]),
-                    rank=idx + 1,
-                    show_player=True,
-                    show_full_player=False,
-                )
-                if st.button(
-                    "Cari yang mirip",
-                    key=f"cari_mirip_{row['track_id']}",
-                    width="stretch",
+            search_rows = hasil_cari_lagu.to_dict(orient="records")
+            search_media = fetch_recommendation_media(search_rows)
+            search_card_keys = [
+                f"search_{idx}_{row.get('track_id', '')}"
+                for idx, row in enumerate(search_rows)
+            ]
+            _register_player_tracks(
+                search_rows,
+                search_media,
+                search_card_keys,
+                player_tracks_by_id,
+            )
+            with st.container(key="tc-search-grid"):
+                search_columns = st.columns(2, gap="medium")
+                for idx, (row, media, card_key) in enumerate(
+                    zip(search_rows, search_media, search_card_keys)
                 ):
-                    st.session_state["lagu_pencarian_serupa"] = str(row["track_id"])
-                    st.rerun()
+                    track_id = str(row["track_id"])
+                    with search_columns[idx % len(search_columns)]:
+                        st.caption(
+                            f"Cluster K-Means {int(row['cluster_kmeans'])} · {row['nama_cluster']} "
+                            f"│ Cluster BIRCH {int(row['cluster_birch'])} · {row['nama_cluster_birch']}"
+                        )
+                        render_track_card(
+                            track_name=str(row["track_name"]),
+                            artists=str(row["artists"]),
+                            genre=str(row["genre_gabungan"]),
+                            similarity_score=100.0,
+                            track_id=track_id,
+                            rank=idx + 1,
+                            show_player=True,
+                            show_full_player=False,
+                            cover_url=media["cover_url"],
+                            preview_url=media["preview_url"],
+                            shared_player=True,
+                            player_key=card_key,
+                        )
+                        if st.button(
+                            "Cari yang mirip",
+                            key=f"cari_mirip_{track_id}",
+                            width="stretch",
+                        ):
+                            st.session_state["lagu_pencarian_serupa"] = track_id
+                            st.rerun()
 
     lagu_pencarian_serupa = st.session_state.get("lagu_pencarian_serupa")
     if lagu_pencarian_serupa:
@@ -628,25 +723,46 @@ with st.expander(
             st.info("Tidak ada lagu lain di katalog untuk dibandingkan.")
         else:
             max_jarak = max(float(hasil_serupa["jarak"].max()) * 1.1, 1e-12)
-            for idx, row in hasil_serupa.iterrows():
-                st.caption(
-                    f"Cluster K-Means {int(row['cluster_kmeans'])} · {row['nama_cluster']} "
-                    f"│ Cluster BIRCH {int(row['cluster_birch'])} · {row['nama_cluster_birch']}"
-                )
-                render_track_card(
-                    track_name=str(row["track_name"]),
-                    artists=str(row["artists"]),
-                    genre=str(row["genre_gabungan"]),
-                    similarity_score=max(
-                        0.0,
-                        (1.0 - float(row["jarak"]) / max_jarak) * 100.0,
-                    ),
-                    track_id=str(row["track_id"]),
-                    rank=idx + 1,
-                    show_player=True,
-                    show_full_player=False,
-                    jarak=float(row["jarak"]),
-                )
+            similar_rows = hasil_serupa.to_dict(orient="records")
+            similar_media = fetch_recommendation_media(similar_rows)
+            similar_card_keys = [
+                f"similar_{idx}_{row.get('track_id', '')}"
+                for idx, row in enumerate(similar_rows)
+            ]
+            _register_player_tracks(
+                similar_rows,
+                similar_media,
+                similar_card_keys,
+                player_tracks_by_id,
+            )
+            with st.container(key="tc-similar-grid"):
+                similar_columns = st.columns(2, gap="medium")
+                for idx, (row, media, card_key) in enumerate(
+                    zip(similar_rows, similar_media, similar_card_keys)
+                ):
+                    with similar_columns[idx % len(similar_columns)]:
+                        st.caption(
+                            f"Cluster K-Means {int(row['cluster_kmeans'])} · {row['nama_cluster']} "
+                            f"│ Cluster BIRCH {int(row['cluster_birch'])} · {row['nama_cluster_birch']}"
+                        )
+                        render_track_card(
+                            track_name=str(row["track_name"]),
+                            artists=str(row["artists"]),
+                            genre=str(row["genre_gabungan"]),
+                            similarity_score=max(
+                                0.0,
+                                (1.0 - float(row["jarak"]) / max_jarak) * 100.0,
+                            ),
+                            track_id=str(row["track_id"]),
+                            rank=idx + 1,
+                            show_player=True,
+                            show_full_player=False,
+                            jarak=float(row["jarak"]),
+                            cover_url=media["cover_url"],
+                            preview_url=media["preview_url"],
+                            shared_player=True,
+                            player_key=card_key,
+                        )
 
 
 # 3. Filter rekomendasi
@@ -865,6 +981,14 @@ if df_hasil is not None and meta_hasil is not None:
             get_spotify_search_url(str(row["track_name"]), str(row["artists"]))
             for _, row in df_export.iterrows()
         ]
+        export_rows = df_export.to_dict(orient="records")
+        export_track_ids = [str(row["track_id"]) for row in export_rows]
+        _register_player_tracks(
+            export_rows,
+            [media_by_track_id[track_id] for track_id in export_track_ids],
+            export_track_ids,
+            player_tracks_by_id,
+        )
 
         with st.container(key="tc-rec-results-header"):
             col_title, col_copy, col_csv = st.columns(
@@ -904,20 +1028,6 @@ if df_hasil is not None and meta_hasil is not None:
                 st.session_state["last_rekomendasi"] = df_hasil.sample(frac=1).reset_index(drop=True)
                 st.rerun()
 
-        render_recommendation_player(
-            [
-                {
-                    "track_id": str(row["track_id"]),
-                    "track_name": str(row["track_name"]),
-                    "artists": primary_artist(str(row["artists"])),
-                    "cover_url": media_by_track_id[str(row["track_id"])]["cover_url"],
-                    "preview_url": media_by_track_id[str(row["track_id"])]["preview_url"],
-                    "spotify_url": str(row["spotify_search_url"]),
-                }
-                for _, row in df_export.iterrows()
-            ]
-        )
-
         with st.container(key="tc-rec-grid"):
             track_columns = st.columns(4, gap="medium")
             for position, (_, row) in enumerate(df_tampil.iterrows()):
@@ -955,19 +1065,13 @@ if df_hasil is not None and meta_hasil is not None:
                         )
                         play_col, save_col = st.columns([1, 1], gap="small")
                         with play_col:
-                            if st.button(
+                            st.button(
                                 "Putar",
                                 key=f"play_recommended_track_{track_id}",
                                 icon=":material/play_arrow:",
                                 width="stretch",
                                 help=f"Putar {track_name}",
-                            ):
-                                st.session_state["recommendation_now_playing"] = {
-                                    "track_id": track_id,
-                                    "track_name": track_name,
-                                    "artists": artists,
-                                    "preview_url": media_by_track_id[track_id]["preview_url"],
-                                }
+                            )
                         with save_col:
                             if track_id in saved_track_ids:
                                 if st.button(
@@ -1021,13 +1125,5 @@ if df_hasil is not None and meta_hasil is not None:
                             unsafe_allow_html=True,
                         )
 
-        now_playing = st.session_state.get("recommendation_now_playing")
-        if now_playing:
-            render_now_playing(
-                track_name=now_playing["track_name"],
-                artists=now_playing["artists"],
-                track_id=now_playing["track_id"],
-                preview_url=now_playing.get("preview_url"),
-            )
-
+render_recommendation_player(list(player_tracks_by_id.values()))
 render_footer()

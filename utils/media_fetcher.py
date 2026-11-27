@@ -6,10 +6,11 @@ import html
 import json
 import logging
 import re
+import time
 from collections.abc import Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from typing import TypedDict
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode, urlparse
 from urllib.request import Request, urlopen
 
@@ -18,6 +19,7 @@ import streamlit as st
 
 LOGGER = logging.getLogger(__name__)
 REQUEST_TIMEOUT = 4
+MEDIA_CACHE_TTL = 300
 SPOTIFY_TRACK_ID_PATTERN = re.compile(r"^[A-Za-z0-9]{22}$")
 JAPANESE_TEXT_PATTERN = re.compile(r"[\u3040-\u30ff\u3400-\u9fff]")
 
@@ -65,6 +67,49 @@ def _text(value: object) -> str:
     return value.strip() if isinstance(value, str) else ""
 
 
+def clean_track_title(title: str) -> str:
+    """Remove common release annotations that make public music searches less precise."""
+    cleaned = re.sub(
+        r"\s*[\[(]\s*(?:feat(?:uring)?\.?|with)\b[^\])]*[\])]",
+        "",
+        title,
+        flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(
+        r"\s*-\s*(?:\d{4}\s*)?remaster(?:ed)?\b.*$",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(
+        r"\s*[\[(]\s*(?:explicit|clean|radio edit)\b[^\])]*[\])]",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    return " ".join(cleaned.split()).strip()
+
+
+def _spotify_track_id(value: object) -> str:
+    candidate = _text(value)
+    if SPOTIFY_TRACK_ID_PATTERN.fullmatch(candidate):
+        return candidate
+    try:
+        parsed = urlparse(candidate)
+    except ValueError:
+        return ""
+    if parsed.scheme != "https" or parsed.hostname not in {
+        "open.spotify.com",
+        "www.open.spotify.com",
+    }:
+        return ""
+    parts = parsed.path.strip("/").split("/")
+    if len(parts) < 2 or parts[0] != "track":
+        return ""
+    track_id = parts[1]
+    return track_id if SPOTIFY_TRACK_ID_PATTERN.fullmatch(track_id) else ""
+
+
 def _has_japanese(text: str) -> bool:
     return bool(JAPANESE_TEXT_PATTERN.search(text))
 
@@ -91,36 +136,40 @@ def _valid_https_url(value: object, allowed_domains: tuple[str, ...]) -> str | N
 
 
 def _request_json(url: str, provider: str) -> dict[str, object] | None:
-    request = Request(
-        url,
-        headers={"Accept": "application/json", "User-Agent": "TuneCluster/1.0"},
-    )
-    try:
-        with urlopen(request, timeout=REQUEST_TIMEOUT) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-    except (URLError, TimeoutError, OSError, ValueError) as exc:
-        LOGGER.warning("%s metadata request failed: %s", provider, exc)
-        return None
-    if not isinstance(payload, dict):
-        LOGGER.warning("%s metadata response was not a JSON object", provider)
-        return None
-    return {str(key): value for key, value in payload.items()}
+    for attempt in range(2):
+        request = Request(
+            url,
+            headers={"Accept": "application/json", "User-Agent": "TuneCluster/1.0"},
+        )
+        try:
+            with urlopen(request, timeout=REQUEST_TIMEOUT) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except HTTPError as exc:
+            if attempt == 0 and exc.code in {403, 429}:
+                exc.close()
+                time.sleep(0.2)
+                continue
+            LOGGER.warning("%s metadata request failed: %s", provider, exc)
+            return None
+        except (URLError, TimeoutError, OSError, ValueError) as exc:
+            if attempt == 0:
+                time.sleep(0.2)
+                continue
+            LOGGER.warning("%s metadata request failed: %s", provider, exc)
+            return None
+        if not isinstance(payload, dict):
+            LOGGER.warning("%s metadata response was not a JSON object", provider)
+            return None
+        return {str(key): value for key, value in payload.items()}
+    return None
 
 
 def _search_variants(title: str, artist: str) -> list[tuple[str, str | None]]:
-    terms = [" ".join(part for part in (title, artist) if part), title]
-    countries: tuple[str | None, ...] = (None, "JP") if _has_japanese(title) else (None,)
-    variants: list[tuple[str, str | None]] = []
-    seen: set[tuple[str, str | None]] = set()
-    for term in terms:
-        if not term:
-            continue
-        for country in countries:
-            variant = (term, country)
-            if variant not in seen:
-                variants.append(variant)
-                seen.add(variant)
-    return variants
+    combined = " ".join(part for part in (title, artist) if part)
+    variants = [(combined, None), (title, None)] if combined else []
+    if title and _has_japanese(title):
+        variants.append((title, "JP"))
+    return list(dict.fromkeys(variant for variant in variants if variant[0]))
 
 
 def _title_matches(requested: str, result: str) -> bool:
@@ -130,6 +179,7 @@ def _title_matches(requested: str, result: str) -> bool:
         return False
     return (
         target == candidate
+        or target in candidate
         or candidate.startswith(f"{target} ")
         or target.startswith(f"{candidate} ")
     )
@@ -154,7 +204,7 @@ def _rank_records(
     relevant = [
         record
         for record in records
-        if _title_matches(title, record_title(record)) or _has_japanese(title)
+        if _title_matches(title, record_title(record))
     ]
     return sorted(
         relevant,
@@ -198,10 +248,10 @@ def _deezer_preview(record: dict[str, object]) -> str | None:
     return _valid_https_url(record.get("preview"), ("dzcdn.net",))
 
 
-@st.cache_data(ttl=86400, show_spinner=False)
+@st.cache_data(ttl=MEDIA_CACHE_TTL, show_spinner=False)
 def get_spotify_cover_url(track_id: str) -> str | None:
     """Look up a cover from Spotify oEmbed after validating the Spotify track ID."""
-    clean_id = _text(track_id)
+    clean_id = _spotify_track_id(track_id)
     if not SPOTIFY_TRACK_ID_PATTERN.fullmatch(clean_id):
         return None
     track_url = f"https://open.spotify.com/track/{clean_id}"
@@ -231,21 +281,24 @@ def placeholder_cover_data_uri(track_name: str) -> str:
     return "data:image/svg+xml;charset=utf-8," + quote(svg, safe="")
 
 
-@st.cache_data(ttl=86400, show_spinner=False)
+@st.cache_data(ttl=MEDIA_CACHE_TTL, show_spinner=False)
 def fetch_track_media(
     track_name: str,
     artists: str,
     track_id: str | None = None,
 ) -> TrackMedia:
-    """Fetch HD cover art and an audio preview from public search APIs."""
-    title = _text(track_name)
+    """Prefer Spotify artwork, then fill missing media from iTunes and Deezer."""
+    title = clean_track_title(_text(track_name))
     artist = primary_artist(_text(artists))
-    cover_url: str | None = None
+    spotify_id = _spotify_track_id(track_id)
+    cover_url = get_spotify_cover_url(spotify_id) if spotify_id else None
     preview_url: str | None = None
     variants = _search_variants(title, artist)
 
     for term, country in variants:
-        params: dict[str, str] = {"term": term, "entity": "song", "limit": "3"}
+        if cover_url and preview_url:
+            break
+        params: dict[str, str] = {"term": term, "entity": "song", "limit": "5"}
         if country:
             params["country"] = country
         payload = _request_json(
@@ -267,7 +320,7 @@ def fetch_track_media(
         if cover_url and preview_url:
             break
         payload = _request_json(
-            "https://api.deezer.com/search?" + urlencode({"q": term, "limit": "3"}),
+            "https://api.deezer.com/search?" + urlencode({"q": term, "limit": "5"}),
             "Deezer",
         )
         raw_results = payload.get("data") if payload else None
@@ -278,9 +331,6 @@ def fetch_track_media(
             if cover_url and preview_url:
                 break
 
-    clean_track_id = _text(track_id)
-    if cover_url is None and clean_track_id:
-        cover_url = get_spotify_cover_url(clean_track_id)
     if cover_url is None:
         LOGGER.warning("No remote cover found for %r by %r; using initials placeholder", title, artist)
         cover_url = placeholder_cover_data_uri(title)
@@ -291,7 +341,18 @@ def fetch_track_media(
 def _fetch_track_row(track: Mapping[str, object]) -> TrackMedia:
     track_name = _text(track.get("track_name"))
     artists = _text(track.get("artists"))
-    track_id = _text(track.get("track_id")) or None
+    track_id = next(
+        (
+            candidate
+            for candidate in (
+                _text(track.get("track_id")),
+                _text(track.get("spotify_id")),
+                _text(track.get("spotify_url")),
+            )
+            if _spotify_track_id(candidate)
+        ),
+        None,
+    )
     return fetch_track_media(track_name, artists, track_id)
 
 

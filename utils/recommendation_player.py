@@ -95,6 +95,13 @@ PLAYER_COMPONENT_HTML = r"""
             #tc-recommendation-player button:hover {
                 background: #303030;
             }
+            #tc-recommendation-player button:focus {
+                outline: none;
+            }
+            #tc-recommendation-player button:focus-visible {
+                outline: 2px solid rgba(255, 255, 255, 0.72);
+                outline-offset: 2px;
+            }
             #tc-recommendation-player .tc-player-toggle {
                 min-width: 42px;
                 border-color: rgba(29, 185, 84, 0.65);
@@ -131,6 +138,22 @@ PLAYER_COMPONENT_HTML = r"""
             }
             #tc-recommendation-player .tc-player-volume input {
                 min-width: 0;
+            }
+            #tc-recommendation-player .tc-player-volume-indicator {
+                display: inline-flex;
+                align-items: center;
+                justify-content: flex-end;
+                gap: 3px;
+                min-width: 42px;
+                color: #b7b7b7;
+                font-variant-numeric: tabular-nums;
+                text-align: right;
+            }
+            #tc-recommendation-player .tc-player-volume-indicator svg {
+                width: 14px;
+                height: 14px;
+                flex: none;
+                fill: currentColor;
             }
             #tc-recommendation-player .tc-player-status {
                 grid-area: status;
@@ -213,6 +236,17 @@ PLAYER_COMPONENT_HTML = r"""
                 <span>Volume</span>
                 <input type="range" min="0" max="1" step="0.01" value="0.8"
                        data-player-volume aria-label="Volume">
+                <span class="tc-player-volume-indicator" data-player-volume-indicator
+                      aria-live="polite">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M3 9v6h4l5 5V4L7 9H3z"></path>
+                        <path data-player-volume-wave
+                              d="M16.5 12a4.5 4.5 0 0 0-2.5-4.03v8.05a4.5 4.5 0 0 0 2.5-4.02z"></path>
+                        <path data-player-volume-mute d="M15 9l6 6m0-6l-6 6"
+                              fill="none" stroke="currentColor" stroke-width="2"></path>
+                    </svg>
+                    <span data-player-volume-value>80%</span>
+                </span>
             </label>
             <div class="tc-player-status" data-player-status hidden>
                 <span data-player-status-text></span>
@@ -221,9 +255,12 @@ PLAYER_COMPONENT_HTML = r"""
         `;
         doc.body.appendChild(bar);
 
-        const audio = new host.Audio();
+        const audio = doc.createElement("audio");
         audio.preload = "none";
-        audio.volume = 0.8;
+        audio.hidden = true;
+        audio.setAttribute("aria-hidden", "true");
+        audio.playsInline = true;
+        doc.body.appendChild(audio);
         const refs = {
             cover: bar.querySelector("[data-player-cover]"),
             title: bar.querySelector("[data-player-title]"),
@@ -233,6 +270,10 @@ PLAYER_COMPONENT_HTML = r"""
             duration: bar.querySelector("[data-player-duration]"),
             seek: bar.querySelector("[data-player-seek]"),
             volume: bar.querySelector("[data-player-volume]"),
+            volumeIndicator: bar.querySelector("[data-player-volume-indicator]"),
+            volumeValue: bar.querySelector("[data-player-volume-value]"),
+            volumeWave: bar.querySelector("[data-player-volume-wave]"),
+            volumeMute: bar.querySelector("[data-player-volume-mute]"),
             status: bar.querySelector("[data-player-status]"),
             statusText: bar.querySelector("[data-player-status-text]"),
             statusLink: bar.querySelector("[data-player-link]"),
@@ -245,6 +286,7 @@ PLAYER_COMPONENT_HTML = r"""
         let cleanupTimer = null;
         let reservedBlock = null;
         let originalPadding = "";
+        let playRequestId = 0;
 
         function reserveSpace(enabled) {
             const block = doc.querySelector('[data-testid="stMainBlockContainer"]');
@@ -257,7 +299,7 @@ PLAYER_COMPONENT_HTML = r"""
                     reservedBlock = block;
                     originalPadding = block.style.paddingBottom;
                 }
-                block.style.paddingBottom = "120px";
+                block.style.paddingBottom = "110px";
             } else if (reservedBlock) {
                 reservedBlock.style.paddingBottom = originalPadding;
                 reservedBlock = null;
@@ -283,14 +325,57 @@ PLAYER_COMPONENT_HTML = r"""
             refs.status.hidden = !message;
         }
 
+        function setVolume(value, persist = true) {
+            const parsedVolume = Number(value);
+            const volume = Number.isFinite(parsedVolume)
+                ? Math.min(1, Math.max(0, parsedVolume))
+                : 0.8;
+            audio.volume = volume;
+            audio.muted = volume === 0;
+            refs.volume.value = String(volume);
+            refs.volumeValue.textContent = `${Math.round(volume * 100)}%`;
+            refs.volumeWave.hidden = volume === 0;
+            refs.volumeMute.hidden = volume !== 0;
+            refs.volumeIndicator.setAttribute(
+                "aria-label",
+                volume === 0 ? "Audio dibisukan" : `Volume ${Math.round(volume * 100)} persen`,
+            );
+            if (persist) {
+                try {
+                    host.localStorage.setItem("tc_volume", String(volume));
+                } catch (error) {
+                    console.warn("Volume preference could not be saved.", error);
+                }
+            }
+        }
+
+        function restoreVolume() {
+            let savedVolume = 0.8;
+            try {
+                const storedValue = host.localStorage.getItem("tc_volume");
+                if (storedValue !== null && Number.isFinite(Number(storedValue))) {
+                    savedVolume = Number(storedValue);
+                }
+            } catch (error) {
+                console.warn("Volume preference could not be read.", error);
+            }
+            setVolume(savedVolume, false);
+        }
+
         function syncCards() {
             const prefix = "st-key-play_recommended_track_";
             doc.querySelectorAll('div[class*="st-key-play_recommended_track_"]').forEach((wrapper) => {
                 const key = Array.from(wrapper.classList).find((name) => name.startsWith(prefix));
-                const id = key ? key.slice(prefix.length) : "";
+                const cardKey = key ? key.slice(prefix.length) : "";
+                const cardTrack = tracks.find((track) => (
+                    track.track_id === cardKey
+                    || (Array.isArray(track.card_keys) && track.card_keys.includes(cardKey))
+                ));
                 const button = wrapper.querySelector('[data-testid="stButton"] button');
                 if (!button) return;
-                const isCurrent = Boolean(currentTrack && id === currentTrack.track_id);
+                const isCurrent = Boolean(
+                    currentTrack && cardTrack && cardTrack.track_id === currentTrack.track_id
+                );
                 const isPlaying = isCurrent && !audio.paused;
                 wrapper.classList.toggle("tc-rec-playing", isPlaying);
                 if (button.getAttribute("aria-pressed") !== String(isPlaying)) {
@@ -357,30 +442,41 @@ PLAYER_COMPONENT_HTML = r"""
             syncCards();
         }
 
-        function playTrack(track) {
+        function playTrack(track, restart = true) {
             currentTrack = track;
             if (!track.preview_url) {
                 audio.pause();
+                audio.currentTime = 0;
                 audio.removeAttribute("src");
                 audio.load();
-                showStatus("Preview audio tidak tersedia.", track.spotify_url);
+                restoreVolume();
+                showStatus("Preview tidak tersedia", track.spotify_url);
                 render();
                 return;
             }
+            restoreVolume();
             showStatus("Memuat preview...");
-            if (audio.getAttribute("src") !== track.preview_url) {
+            const sourceChanged = audio.getAttribute("src") !== track.preview_url;
+            if (restart || sourceChanged) {
                 audio.pause();
-                audio.src = track.preview_url;
                 audio.currentTime = 0;
+                audio.src = track.preview_url;
+                audio.load();
             }
             render();
+            const requestId = ++playRequestId;
             const playRequest = audio.play();
             if (playRequest && typeof playRequest.catch === "function") {
                 playRequest.catch((error) => {
-                    if (!currentTrack || currentTrack.track_id !== track.track_id) return;
-                    if (error && error.name === "AbortError") return;
+                    if (requestId !== playRequestId) return;
+                    if (error && error.name === "AbortError") {
+                        audio.pause();
+                        showStatus("Preview tidak tersedia", track.spotify_url);
+                        render();
+                        return;
+                    }
                     audio.pause();
-                    showStatus("Preview tidak dapat diputar di browser ini.", track.spotify_url);
+                    showStatus("Preview tidak tersedia", track.spotify_url);
                     render();
                 });
             }
@@ -408,10 +504,10 @@ PLAYER_COMPONENT_HTML = r"""
                 else if (action === "next") skip(1);
                 else if (action === "toggle" && currentTrack) {
                     if (!currentTrack.preview_url) {
-                        showStatus("Preview audio tidak tersedia.", currentTrack.spotify_url);
+                        showStatus("Preview tidak tersedia", currentTrack.spotify_url);
                         render();
                     } else if (audio.paused) {
-                        playTrack(currentTrack);
+                        playTrack(currentTrack, false);
                     } else {
                         audio.pause();
                     }
@@ -424,8 +520,11 @@ PLAYER_COMPONENT_HTML = r"""
             if (!wrapper) return;
             const prefix = "st-key-play_recommended_track_";
             const key = Array.from(wrapper.classList).find((name) => name.startsWith(prefix));
-            const trackId = key ? key.slice(prefix.length) : "";
-            const track = tracks.find((item) => item.track_id === trackId);
+            const cardKey = key ? key.slice(prefix.length) : "";
+            const track = tracks.find((item) => (
+                item.track_id === cardKey
+                || (Array.isArray(item.card_keys) && item.card_keys.includes(cardKey))
+            ));
             if (!track) return;
             event.preventDefault();
             event.stopPropagation();
@@ -459,6 +558,7 @@ PLAYER_COMPONENT_HTML = r"""
             showStatus("");
             render();
         });
+        audio.addEventListener("playing", render);
         audio.addEventListener("pause", render);
         audio.addEventListener("timeupdate", render);
         audio.addEventListener("loadedmetadata", render);
@@ -472,7 +572,7 @@ PLAYER_COMPONENT_HTML = r"""
                 return;
             }
             audio.pause();
-            showStatus("Preview gagal dimuat.", currentTrack.spotify_url);
+            showStatus("Preview tidak tersedia", currentTrack.spotify_url);
             render();
         });
         doc.addEventListener("click", handleClick, true);
@@ -482,9 +582,9 @@ PLAYER_COMPONENT_HTML = r"""
                 refs.currentTime.textContent = formatTime(audio.currentTime);
             }
         });
-        refs.volume.addEventListener("input", () => {
-            audio.volume = Number(refs.volume.value);
-        });
+        refs.volume.addEventListener("input", () => setVolume(refs.volume.value));
+        refs.volume.addEventListener("change", () => setVolume(refs.volume.value));
+        restoreVolume();
         new host.MutationObserver(reconcilePage).observe(doc.body, {
             childList: true,
             subtree: true,
@@ -517,6 +617,12 @@ def serialize_player_tracks(tracks: Sequence[Mapping[str, object]]) -> str:
     payload = []
     for track in tracks:
         preview_url = track.get("preview_url")
+        raw_card_keys = track.get("card_keys")
+        card_keys = (
+            raw_card_keys
+            if isinstance(raw_card_keys, (list, tuple))
+            else [track.get("track_id")]
+        )
         payload.append(
             {
                 "track_id": str(track.get("track_id") or ""),
@@ -525,6 +631,7 @@ def serialize_player_tracks(tracks: Sequence[Mapping[str, object]]) -> str:
                 "cover_url": str(track.get("cover_url") or ""),
                 "preview_url": str(preview_url).strip() if preview_url else None,
                 "spotify_url": str(track.get("spotify_url") or ""),
+                "card_keys": [str(card_key) for card_key in card_keys if card_key],
             }
         )
     return (
