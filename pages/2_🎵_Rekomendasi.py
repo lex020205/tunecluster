@@ -34,7 +34,11 @@ from utils.media_fetcher import (
 )
 from utils.playlist_export import playlist_to_csv, playlist_to_text
 from utils.recommendation_player import render_recommendation_player
-from utils.recommender import get_recommender, track_has_genre
+from utils.recommender import (
+    get_recommender,
+    score_recommendations,
+    track_has_genre,
+)
 from utils.spotify_embed import get_spotify_search_url, render_track_card
 
 st.set_page_config(
@@ -814,27 +818,13 @@ with st.form("form_rekomendasi_playlist"):
                 key="input_mood",
             )
 
-        col_count, col_popular = st.columns([1, 1.4], vertical_alignment="center")
-        with col_count:
-            jumlah_lagu = st.slider(
-                "Jumlah lagu",
-                min_value=5,
-                max_value=20,
-                value=10,
-                step=1,
-                key="input_jumlah_lagu",
-            )
-        with col_popular:
-            mode_populer = st.toggle(
-                "Utamakan lagu populer / familiar",
-                value=False,
-                key="input_mode_populer",
-                disabled=not has_popularity,
-                help="Mengurutkan kandidat berdasarkan popularitas Spotify yang tersedia.",
-            )
-            mode_rekomendasi = (
-                "Populer / Familiar" if mode_populer else "Kecocokan Audio"
-            )
+        mode_populer = st.toggle(
+            "Prioritaskan popularitas jika kemiripan setara",
+            value=False,
+            key="input_mode_populer",
+            disabled=not has_popularity,
+            help="Popularitas Spotify hanya menjadi pemecah nilai kemiripan yang sama.",
+        )
 
         with st.expander("Pengaturan lanjutan"):
             algoritma_label = st.radio(
@@ -856,24 +846,18 @@ if submit_btn:
     aktivitas_val = AKTIVITAS_OPTIONS[aktivitas_label]
     mood_val = MOOD_OPTIONS[mood_label]
     algo_val = ALGORITMA_OPTIONS[algoritma_label]
+    st.session_state["_recommendation_visible_count"] = 24
 
     with st.spinner("Sedang menganalisis karakteristik audio dan menyusun playlist terbaik..."):
         df_rekom = recommender.rekomendasi(
             genre_user=user_genres,
             aktivitas=aktivitas_val,
             mood=mood_val,
-            n=int(jumlah_lagu),
             algoritma=algo_val,
-            prioritaskan_populer=(mode_rekomendasi == "Populer / Familiar"),
+            prioritaskan_populer=mode_populer,
         )
         df_rekom = deduplicate_recommendations(df_rekom)
-
-        # Hitung skor kemiripan: (1 - normalized distance) dalam persen
-        max_dist_ref = max(4.0, float(df_rekom["jarak"].max()) * 1.1) if not df_rekom.empty else 4.0
-        df_rekom = df_rekom.copy()
-        df_rekom["skor_kemiripan"] = (
-            (1.0 - (df_rekom["jarak"] / max_dist_ref)).clip(0.0, 1.0) * 100.0
-        )
+        df_rekom = score_recommendations(df_rekom)
 
         meta: dict[str, Any] = {
             "algoritma": algo_val,
@@ -981,19 +965,30 @@ if df_hasil is not None and meta_hasil is not None:
         )
         df_tampil = df_tampil[mask_f].reset_index(drop=True)
 
+    previous_filter_genre = st.session_state.get("_previous_result_genre_filter")
+    if previous_filter_genre != filter_genre_hasil:
+        st.session_state["_recommendation_visible_count"] = 24
+        st.session_state["_previous_result_genre_filter"] = filter_genre_hasil
+    visible_count = min(
+        len(df_tampil),
+        max(24, int(st.session_state.get("_recommendation_visible_count", 24))),
+    )
+    df_visible = df_tampil.head(visible_count)
+
     media_by_track_id = {}
-    if not df_tampil.empty:
-        track_ids = [str(track_id) for track_id in df_tampil["track_id"]]
-        fetched_media = fetch_recommendation_media(df_tampil.to_dict(orient="records"))
+    if not df_visible.empty:
+        track_ids = [str(track_id) for track_id in df_visible["track_id"]]
+        fetched_media = fetch_recommendation_media(df_visible.to_dict(orient="records"))
         media_by_track_id = dict(zip(track_ids, fetched_media))
 
     if df_tampil.empty:
-        with st.container(key="tc-rec-results-header"):
-            st.markdown(
-                '<h2 class="tc-rec-results-title">Hasil rekomendasi</h2>',
-                unsafe_allow_html=True,
+        if df_hasil.empty:
+            st.info(
+                "Belum ada lagu dengan kemiripan minimal 50%. Coba kombinasi genre, suasana, "
+                "atau aktivitas lain."
             )
-        st.info("Tidak ada lagu yang cocok dengan filter di atas. Kosongkan filter untuk melihat semua lagu.")
+        else:
+            st.info("Tidak ada lagu yang cocok dengan filter ini. Hapus filter untuk melihat semua lagu.")
     else:
         saved_track_ids = {
             str(saved["track_id"])
@@ -1004,13 +999,13 @@ if df_hasil is not None and meta_hasil is not None:
             get_spotify_search_url(str(row["track_name"]), str(row["artists"]))
             for _, row in df_export.iterrows()
         ]
-        export_rows = df_export.to_dict(orient="records")
-        export_track_ids = [str(row["track_id"]) for row in export_rows]
-        player_default_track_id = export_track_ids[0] if export_track_ids else None
+        visible_rows = df_visible.to_dict(orient="records")
+        visible_track_ids = [str(row["track_id"]) for row in visible_rows]
+        player_default_track_id = visible_track_ids[0] if visible_track_ids else None
         _register_player_tracks(
-            export_rows,
-            [media_by_track_id[track_id] for track_id in export_track_ids],
-            export_track_ids,
+            visible_rows,
+            [media_by_track_id[track_id] for track_id in visible_track_ids],
+            visible_track_ids,
             player_tracks_by_id,
         )
 
@@ -1024,7 +1019,10 @@ if df_hasil is not None and meta_hasil is not None:
                     f"""
                     <div>
                         <h2 class="tc-rec-results-title">Hasil rekomendasi</h2>
-                        <div class="tc-rec-results-caption">{len(df_tampil)} lagu untuk playlist Anda</div>
+                        <div class="tc-rec-results-caption">
+                            Menampilkan {len(df_visible)} dari {len(df_tampil)} lagu cocok
+                            (kemiripan ≥ 50%)
+                        </div>
                     </div>
                     """,
                     unsafe_allow_html=True,
@@ -1041,20 +1039,9 @@ if df_hasil is not None and meta_hasil is not None:
                     width="stretch",
                 )
 
-        col_shuffle, _ = st.columns([1, 3])
-        with col_shuffle:
-            if st.button(
-                "Acak playlist",
-                key="btn_shuffle_playlist",
-                width="stretch",
-                disabled=df_hasil.empty,
-            ):
-                st.session_state["last_rekomendasi"] = df_hasil.sample(frac=1).reset_index(drop=True)
-                st.rerun()
-
         with st.container(key="tc-rec-grid"):
             track_columns = st.columns(4, gap="medium")
-            for position, (_, row) in enumerate(df_tampil.iterrows()):
+            for position, (_, row) in enumerate(df_visible.iterrows()):
                 track_id = str(row["track_id"])
                 track_name = str(row["track_name"])
                 artists = str(row["artists"])
@@ -1124,6 +1111,8 @@ if df_hasil is not None and meta_hasil is not None:
                                     track_id=track_id,
                                     aktivitas=str(meta_hasil["aktivitas"]),
                                     mood=str(meta_hasil["mood"]),
+                                    cover_url=media_by_track_id[track_id]["cover_url"],
+                                    preview_url=media_by_track_id[track_id]["preview_url"],
                                 ):
                                     st.toast("Lagu tersimpan di Profil Anda.")
                                     st.rerun()
@@ -1150,6 +1139,15 @@ if df_hasil is not None and meta_hasil is not None:
                             """,
                             unsafe_allow_html=True,
                         )
+
+        if visible_count < len(df_tampil):
+            if st.button(
+                "Muat lebih banyak",
+                key="btn_load_more_recommendations",
+                width="stretch",
+            ):
+                st.session_state["_recommendation_visible_count"] = visible_count + 24
+                st.rerun()
 
 selected_player_track_id = st.session_state.get("_player_selected_track_id")
 if selected_player_track_id in player_tracks_by_id:

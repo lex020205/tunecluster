@@ -5,7 +5,7 @@ Database disimpan di `data/tunecluster_users.db` dengan empat tabel utama:
 - `users`        : akun dan profil pengguna (password di-hash dengan SHA-256)
 - `user_genres`  : daftar genre favorit per pengguna
 - `user_history` : riwayat rekomendasi aktivitas, mood, dan track_id hasil rekomendasi
-- `saved_tracks` : lagu yang disimpan pengguna dari daftar rekomendasi
+- `saved_tracks` : lagu tersimpan dari Beranda/Rekomendasi beserta metadata media
 """
 
 from __future__ import annotations
@@ -119,11 +119,19 @@ def init_db(db_path: str | Path | None = None) -> None:
                     track_id TEXT NOT NULL,
                     aktivitas TEXT NOT NULL,
                     mood TEXT NOT NULL,
+                    cover_url TEXT,
+                    preview_url TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     UNIQUE(user_id, track_id)
                 );
                 """
             )
+            saved_track_columns = {
+                row["name"] for row in cursor.execute("PRAGMA table_info(saved_tracks)")
+            }
+            for column in ("cover_url", "preview_url"):
+                if column not in saved_track_columns:
+                    cursor.execute(f"ALTER TABLE saved_tracks ADD COLUMN {column} TEXT")
             cursor.execute(
                 "CREATE INDEX IF NOT EXISTS idx_user_genres_uid ON user_genres(user_id);"
             )
@@ -638,15 +646,22 @@ def save_track(
     aktivitas: str,
     mood: str,
     *,
+    cover_url: str | None = None,
+    preview_url: str | None = None,
     db_path: str | Path | None = None,
 ) -> bool:
-    """Simpan satu lagu untuk pengguna; kembalikan False jika sudah tersimpan."""
+    """Simpan lagu dan metadata media; perbarui media jika lagu sudah tersimpan."""
     if not isinstance(track_id, str) or not track_id.strip():
         raise ValueError("Parameter 'track_id' tidak boleh kosong.")
     if not isinstance(aktivitas, str) or not aktivitas.strip():
         raise ValueError("Parameter 'aktivitas' tidak boleh kosong.")
     if not isinstance(mood, str) or not mood.strip():
         raise ValueError("Parameter 'mood' tidak boleh kosong.")
+    for field, value in (("cover_url", cover_url), ("preview_url", preview_url)):
+        if value is not None and not isinstance(value, str):
+            raise TypeError(f"Parameter '{field}' harus berupa string atau None.")
+    cover_clean = (cover_url.strip() or None) if cover_url is not None else None
+    preview_clean = (preview_url.strip() or None) if preview_url is not None else None
     try:
         uid = int(user_id)
     except (TypeError, ValueError) as err:
@@ -665,12 +680,35 @@ def save_track(
             cursor.execute(
                 """
                 INSERT OR IGNORE INTO saved_tracks
-                    (user_id, track_id, aktivitas, mood)
-                VALUES (?, ?, ?, ?)
+                    (user_id, track_id, aktivitas, mood, cover_url, preview_url)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (uid, track_id.strip(), aktivitas.strip(), mood.strip()),
+                (
+                    uid,
+                    track_id.strip(),
+                    aktivitas.strip(),
+                    mood.strip(),
+                    cover_clean,
+                    preview_clean,
+                ),
             )
-            return cursor.rowcount > 0
+            inserted = cursor.rowcount > 0
+            if cover_clean or preview_clean:
+                cursor.execute(
+                    """
+                    UPDATE saved_tracks
+                    SET cover_url = COALESCE(?, cover_url),
+                        preview_url = COALESCE(?, preview_url)
+                    WHERE user_id = ? AND track_id = ?
+                    """,
+                    (
+                        cover_clean,
+                        preview_clean,
+                        uid,
+                        track_id.strip(),
+                    ),
+                )
+            return inserted
     except sqlite3.Error as err:
         raise RuntimeError(f"Gagal menyimpan lagu: {err}") from err
 
@@ -724,7 +762,7 @@ def get_saved_tracks(
                 values.append(value.strip())
 
     query = f"""
-        SELECT id, user_id, track_id, aktivitas, mood, created_at
+        SELECT id, user_id, track_id, aktivitas, mood, cover_url, preview_url, created_at
         FROM saved_tracks
         WHERE {' AND '.join(conditions)}
         ORDER BY created_at DESC, id DESC

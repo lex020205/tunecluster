@@ -1,5 +1,7 @@
+import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 
 from utils.database import (
@@ -63,6 +65,69 @@ class SavedTrackTests(unittest.TestCase):
         self.assertFalse(remove_saved_track(user_b_id, "track-1", db_path=self.db_path))
         self.assertTrue(remove_saved_track(user_a_id, "track-1", db_path=self.db_path))
         self.assertEqual(get_saved_tracks(user_a_id, db_path=self.db_path), [])
+
+    def test_media_metadata_is_saved_and_refreshed_for_existing_favorites(self) -> None:
+        user_id = self.user_a["user_id"]
+        self.assertTrue(
+            save_track(
+                user_id,
+                "track-1",
+                "Belajar",
+                "Fokus",
+                cover_url="https://images.example/cover.jpg",
+                preview_url="https://audio.example/preview.m4a",
+                db_path=self.db_path,
+            )
+        )
+        self.assertFalse(
+            save_track(
+                user_id,
+                "track-1",
+                "Belajar",
+                "Fokus",
+                preview_url="https://audio.example/refreshed.m4a",
+                db_path=self.db_path,
+            )
+        )
+
+        saved = get_saved_tracks(user_id, db_path=self.db_path)[0]
+        self.assertEqual(saved["cover_url"], "https://images.example/cover.jpg")
+        self.assertEqual(saved["preview_url"], "https://audio.example/refreshed.m4a")
+
+    def test_init_db_adds_media_columns_to_existing_favorites(self) -> None:
+        legacy_path = Path(self.temp_dir.name) / "legacy-users.db"
+        with closing(sqlite3.connect(legacy_path)) as connection, connection:
+            connection.executescript(
+                """
+                CREATE TABLE users (
+                    user_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT UNIQUE NOT NULL,
+                    nama_lengkap TEXT NOT NULL,
+                    umur INTEGER NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_login TIMESTAMP
+                );
+                CREATE TABLE saved_tracks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    track_id TEXT NOT NULL,
+                    aktivitas TEXT NOT NULL,
+                    mood TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(user_id, track_id)
+                );
+                INSERT INTO users (username, nama_lengkap, umur, password_hash)
+                    VALUES ('legacy', 'Legacy User', 30, 'hash');
+                INSERT INTO saved_tracks (user_id, track_id, aktivitas, mood)
+                    VALUES (1, 'track-legacy', 'Belajar', 'Fokus');
+                """
+            )
+
+        init_db(legacy_path)
+        saved = get_saved_tracks(1, db_path=legacy_path)[0]
+        self.assertIsNone(saved["cover_url"])
+        self.assertIsNone(saved["preview_url"])
 
     def test_invalid_saved_track_data_is_rejected(self) -> None:
         with self.assertRaises(ValueError):

@@ -11,12 +11,11 @@ class PopularityRankingTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.recommender = TuneClusterRecommender()
 
-    def test_popularity_reranks_candidates_without_changing_audio_distances(self) -> None:
+    def test_all_candidates_remain_sorted_by_audio_distance(self) -> None:
         parameters = {
             "genre_user": None,
             "aktivitas": "Belajar",
             "mood": "Fokus",
-            "n": 10,
         }
         default = self.recommender.rekomendasi(**parameters)
         explicit_default = self.recommender.rekomendasi(
@@ -33,7 +32,10 @@ class PopularityRankingTests(unittest.TestCase):
             default.attrs["jumlah_kandidat"],
             popular.attrs["jumlah_kandidat"],
         )
-        self.assertTrue(popular["popularity"].is_monotonic_decreasing)
+        self.assertEqual(len(default), default.attrs["jumlah_kandidat"])
+        self.assertEqual(len(popular), popular.attrs["jumlah_kandidat"])
+        self.assertTrue(default["jarak"].is_monotonic_increasing)
+        self.assertTrue(popular["jarak"].is_monotonic_increasing)
 
         target = self.recommender._bangun_vektor_target("Belajar", "Fokus")
         target_scaled = self.recommender.scaler.transform(

@@ -66,6 +66,45 @@ def track_has_genre(genre_gabungan: object, genre_pilihan: str) -> bool:
     return selected in track_genres
 
 
+def score_recommendations(tracks: pd.DataFrame) -> pd.DataFrame:
+    """Score all deduplicated candidates and keep results at or above 50%."""
+    if "jarak" not in tracks.columns:
+        raise ValueError("Kolom 'jarak' tidak tersedia pada hasil rekomendasi.")
+
+    scored = tracks.copy()
+    attrs = tracks.attrs.copy()
+    if scored.empty:
+        scored["skor_kemiripan"] = pd.Series(dtype=float)
+        scored.attrs = attrs
+        return scored
+
+    distances = pd.to_numeric(scored["jarak"], errors="coerce")
+    if distances.isna().any():
+        raise ValueError("Jarak rekomendasi harus berupa angka yang valid.")
+    max_dist_ref = max(4.0, float(distances.max()) * 1.1)
+    scored["skor_kemiripan"] = (
+        (1.0 - distances / max_dist_ref).clip(0.0, 1.0) * 100.0
+    )
+    scored = scored[scored["skor_kemiripan"] >= 50.0]
+
+    sort_columns = ["skor_kemiripan"]
+    ascending = [False]
+    if attrs.get("prioritaskan_populer") and "popularity" in scored.columns:
+        sort_columns.append("popularity")
+        ascending.append(False)
+    if "track_name" in scored.columns:
+        sort_columns.append("track_name")
+        ascending.append(True)
+    scored = scored.sort_values(
+        sort_columns,
+        ascending=ascending,
+        na_position="last",
+        kind="mergesort",
+    ).reset_index(drop=True)
+    scored.attrs = attrs
+    return scored
+
+
 def _tentukan_nama_cluster_dari_profil(
     katalog: pd.DataFrame,
     kolom_cluster: str,
@@ -250,12 +289,11 @@ class TuneClusterRecommender:
         genre_user: list[str] | None,
         aktivitas: str,
         mood: str,
-        n: int = 10,
         algoritma: str = "kmeans",
         prioritaskan_populer: bool = False,
     ) -> pd.DataFrame:
         """
-        Hasilkan rekomendasi top-N lagu berdasarkan preferensi genre, aktivitas, dan mood.
+        Hasilkan seluruh kandidat lagu berdasarkan genre, aktivitas, dan mood.
 
         Parameters
         ----------
@@ -266,12 +304,10 @@ class TuneClusterRecommender:
             Aktivitas pengguna: salah satu dari ["Olahraga", "Belajar", "Santai", "Perjalanan"].
         mood : str
             Mood pengguna: salah satu dari ["Senang/Happy", "Sedih/Sad", "Energik", "Tenang/Calm", "Fokus"].
-        n : int, default=10
-            Jumlah lagu rekomendasi yang dikembalikan (minimal 1).
         algoritma : str, default="kmeans"
             Model clustering yang dipakai ("kmeans" atau "birch").
         prioritaskan_populer : bool, default=False
-            Jika True, urutkan kandidat yang sama berdasarkan popularity, lalu jarak audio.
+            Jika True, gunakan popularity sebagai pemecah skor kemiripan yang sama.
 
         Returns
         -------
@@ -281,8 +317,6 @@ class TuneClusterRecommender:
             Informasi tambahan (fallback_audio, genre_cocok, genre_tidak_tersedia,
             target_cluster, target_vektor) disimpan di `df.attrs`.
         """
-        if not isinstance(n, int) or isinstance(n, bool) or n < 1:
-            raise ValueError("Parameter 'n' harus berupa bilangan bulat >= 1.")
         if not isinstance(prioritaskan_populer, bool):
             raise TypeError("Parameter 'prioritaskan_populer' harus berupa bool.")
         if prioritaskan_populer and "popularity" not in self.katalog.columns:
@@ -341,7 +375,7 @@ class TuneClusterRecommender:
         x_kandidat = self._x_katalog_scaled[idx_kandidat]
         jarak = np.linalg.norm(x_kandidat - target_scaled, axis=1)
 
-        # 7 & 8. Urutkan jarak terdekat dan kembalikan top-N
+        # 7. Urutkan seluruh kandidat berdasarkan jarak audio.
         hasil = self.katalog.iloc[idx_kandidat][
             ["track_id", "track_name", "artists", "genre_gabungan"]
         ].copy()
@@ -360,18 +394,16 @@ class TuneClusterRecommender:
             hasil["popularity"] = popularitas.to_numpy()
             hasil = (
                 hasil.sort_values(
-                    ["popularity", "jarak", "track_name"],
-                    ascending=[False, True, True],
+                    ["jarak", "popularity", "track_name"],
+                    ascending=[True, False, True],
                     na_position="last",
                     kind="mergesort",
                 )
-                .head(n)
                 .reset_index(drop=True)
             )
         else:
             hasil = (
                 hasil.sort_values(["jarak", "track_name"], ascending=[True, True])
-                .head(n)
                 .reset_index(drop=True)
             )
 
@@ -519,9 +551,9 @@ class TuneClusterRecommender:
             genre_user=genre_user,
             aktivitas=aktivitas,
             mood=mood,
-            n=n_lagu,
             algoritma=algoritma,
         )
+        df_rekom = df_rekom.head(n_lagu)
         genres_series = (
             df_rekom["genre_gabungan"]
             .fillna("")
@@ -648,40 +680,36 @@ if __name__ == "__main__":
         genre_user=["Rock", "R&B", "Synth-pop"],
         aktivitas="Olahraga",
         mood="Energik",
-        n=5,
         algoritma="kmeans",
     )
     print("Metadata:", {k: hasil_km.attrs[k] for k in ["target_cluster", "nama_cluster", "genre_cocok", "fallback_audio"]})
-    print(hasil_km.to_string(index=False))
+    print(hasil_km.head(5).to_string(index=False))
 
     print("\n--- Tes Rekomendasi (BIRCH, Belajar + Fokus) ---")
     hasil_bi = rec.rekomendasi(
         genre_user=["Classical", "Ambient"],
         aktivitas="Belajar",
         mood="Fokus",
-        n=5,
         algoritma="birch",
     )
     print("Metadata:", {k: hasil_bi.attrs[k] for k in ["target_cluster", "nama_cluster", "genre_cocok", "fallback_audio"]})
-    print(hasil_bi.to_string(index=False))
+    print(hasil_bi.head(5).to_string(index=False))
 
     print("\n--- Tes Fallback Genre Tidak Tersedia ---")
     hasil_fb = rec.rekomendasi(
         genre_user=["Dangdut", "Lo-Fi"],
         aktivitas="Santai",
         mood="Tenang/Calm",
-        n=5,
         algoritma="kmeans",
     )
     print("Fallback aktif:", hasil_fb.attrs["fallback_audio"], "| Genre tak tersedia:", hasil_fb.attrs["genre_tidak_tersedia"])
-    print(hasil_fb.to_string(index=False))
+    print(hasil_fb.head(5).to_string(index=False))
 
     print("\n--- Tes Error Handling ---")
     for label, fn in [
         ("Aktivitas invalid", lambda: rec.rekomendasi(["rock"], "Tidur", "Tenang/Calm")),
         ("Mood invalid", lambda: rec.rekomendasi(["rock"], "Belajar", "Marah")),
         ("Algoritma invalid", lambda: rec.rekomendasi(["rock"], "Belajar", "Fokus", algoritma="dbscan")),
-        ("n invalid", lambda: rec.rekomendasi(["rock"], "Belajar", "Fokus", n=0)),
     ]:
         try:
             fn()

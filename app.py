@@ -15,7 +15,15 @@ from utils.auth import (
     render_genre_badges,
     render_sidebar,
 )
-from utils.database import get_history, init_db, login_user, register_user
+from utils.database import (
+    get_history,
+    get_saved_tracks,
+    init_db,
+    login_user,
+    register_user,
+    save_track,
+)
+from utils.media_fetcher import fetch_track_media
 from utils.recommender import TuneClusterRecommender
 
 st.set_page_config(
@@ -244,29 +252,32 @@ def _render_dashboard(user: dict) -> None:
         return
 
     katalog_lookup = recommender.katalog.set_index("track_id")[["track_name", "artists"]]
+    saved_track_ids = {
+        str(saved["track_id"])
+        for saved in get_saved_tracks(int(user["user_id"]))
+    }
 
     for item in riwayat:
         track_ids = item.get("rekomendasi_track_ids", [])
-        aktivitas = html.escape(str(item.get("aktivitas", "-")))
-        mood = html.escape(str(item.get("mood", "-")))
+        aktivitas_value = str(item.get("aktivitas", "-"))
+        mood_value = str(item.get("mood", "-"))
+        aktivitas = html.escape(aktivitas_value)
+        mood = html.escape(mood_value)
         waktu = html.escape(str(item.get("timestamp", "-")))
 
-        lagu_preview: list[str] = []
-        for tid in track_ids[:3]:
-            if tid in katalog_lookup.index:
-                row = katalog_lookup.loc[tid]
-                if isinstance(row, type(katalog_lookup)):
-                    row = row.iloc[0]
-                lagu_preview.append(
-                    f"{html.escape(str(row['track_name']))} — {html.escape(str(row['artists']))}"
-                )
-            else:
-                lagu_preview.append(html.escape(str(tid)))
-
-        sisa = len(track_ids) - len(lagu_preview)
-        preview_html = "<br>".join(f"• {txt}" for txt in lagu_preview) if lagu_preview else "• Tidak ada detail lagu"
+        track_ids_preview = [
+            track_id for track_id in track_ids[:3] if track_id in katalog_lookup.index
+        ]
+        sisa = len(track_ids) - len(track_ids_preview)
+        preview_html = (
+            f"{len(track_ids_preview)} lagu terbaru"
+            if track_ids_preview
+            else "Tidak ada detail lagu"
+        )
         if sisa > 0:
-            preview_html += f"<br><span style='color:#9E9E9E;'>… dan {sisa} lagu lainnya</span>"
+            preview_html += (
+                f"<br><span style='color:#9E9E9E;'>… dan {sisa} lagu lainnya</span>"
+            )
 
         st.markdown(
             f"""
@@ -280,6 +291,40 @@ def _render_dashboard(user: dict) -> None:
             """,
             unsafe_allow_html=True,
         )
+        for track_id in track_ids_preview:
+            row = katalog_lookup.loc[track_id]
+            if isinstance(row, type(katalog_lookup)):
+                row = row.iloc[0]
+            track_name = str(row["track_name"])
+            artists = str(row["artists"])
+            save_columns = st.columns([5, 1], vertical_alignment="center")
+            with save_columns[0]:
+                st.caption(f"{track_name} — {artists}")
+            with save_columns[1]:
+                already_saved = str(track_id) in saved_track_ids
+                if st.button(
+                    "Tersimpan" if already_saved else "Simpan",
+                    key=f"home_save_track_{item.get('id', waktu)}_{track_id}",
+                    disabled=already_saved,
+                    help=f"Simpan {track_name} ke Playlist pribadi",
+                    width="stretch",
+                ):
+                    with st.spinner("Mencari sampul dan preview audio..."):
+                        media = fetch_track_media(track_name, artists, str(track_id))
+                        inserted = save_track(
+                            user_id=int(user["user_id"]),
+                            track_id=str(track_id),
+                            aktivitas=aktivitas_value,
+                            mood=mood_value,
+                            cover_url=media["cover_url"],
+                            preview_url=media["preview_url"],
+                        )
+                    st.toast(
+                        "Lagu tersimpan di Profil Anda."
+                        if inserted
+                        else "Lagu ini sudah tersimpan."
+                    )
+                    st.rerun()
 
 
 _render_hero()

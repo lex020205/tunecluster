@@ -44,6 +44,10 @@ def test_search_title_removes_release_and_feature_annotations() -> None:
     )
 
 
+def test_search_title_normalizes_typographic_apostrophes() -> None:
+    assert clean_track_title("I Won’t Give Up") == "I Won't Give Up"
+
+
 def test_media_lookup_cache_uses_short_ttl_for_temporary_failures() -> None:
     assert MEDIA_CACHE_TTL == 300
 

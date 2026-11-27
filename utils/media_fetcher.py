@@ -70,6 +70,19 @@ def _text(value: object) -> str:
 
 def clean_track_title(title: str) -> str:
     """Remove common release annotations that make public music searches less precise."""
+    title = title.translate(
+        str.maketrans(
+            {
+                "’": "'",
+                "‘": "'",
+                "ʼ": "'",
+                "＇": "'",
+                "“": '"',
+                "”": '"',
+                "＂": '"',
+            }
+        )
+    )
     cleaned = re.sub(
         r"\s*[\[(]\s*(?:feat(?:uring)?\.?|with)\b[^\])]*[\])]",
         "",
@@ -381,7 +394,11 @@ def _fetch_track_row(track: Mapping[str, object]) -> TrackMedia:
 
 def fetch_recommendation_media(
     tracks: Sequence[Mapping[str, object]],
+    *,
+    max_workers: int = 8,
 ) -> list[TrackMedia]:
     """Fetch media for recommendation rows concurrently, preserving row order."""
-    with ThreadPoolExecutor(max_workers=8) as executor:
+    if not isinstance(max_workers, int) or isinstance(max_workers, bool) or max_workers < 1:
+        raise ValueError("Parameter 'max_workers' harus berupa bilangan bulat positif.")
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
         return list(executor.map(_fetch_track_row, tracks))

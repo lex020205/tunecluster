@@ -25,8 +25,10 @@ from utils.database import (
     get_user_stats,
     remove_genre,
     remove_saved_track,
+    save_track,
     update_profile,
 )
+from utils.media_fetcher import fetch_recommendation_media, placeholder_cover_data_uri
 from utils.recommender import get_recommender
 from utils.spotify_embed import render_now_playing, render_track_card
 
@@ -306,11 +308,16 @@ st.divider()
 # =============================================================================
 # SECTION 4: PLAYLIST PRIBADI / LAGU TERSIMPAN
 # =============================================================================
-st.subheader("Playlist pribadi")
+st.markdown(
+    '<style>.st-key-tc-profile-saved-playlist-title { padding-top: 0.35rem; }</style>',
+    unsafe_allow_html=True,
+)
+with st.container(key="tc-profile-saved-playlist-title"):
+    st.subheader("Playlist pribadi")
 saved_tracks = get_saved_tracks(user_id)
 
 if not saved_tracks:
-    st.info("Belum ada lagu tersimpan. Simpan lagu dari halaman Rekomendasi untuk menemukannya di sini.")
+    st.info("Belum ada lagu tersimpan. Simpan lagu dari Beranda atau Rekomendasi untuk menemukannya di sini.")
 else:
     col_saved_activity, col_saved_mood = st.columns(2)
     saved_activities = ["Semua"] + sorted({item["aktivitas"] for item in saved_tracks})
@@ -338,6 +345,79 @@ else:
     if not filtered_saved_tracks:
         st.info("Tidak ada lagu tersimpan yang cocok dengan filter ini.")
     else:
+        media_candidates: list[dict[str, str]] = []
+        saved_for_backfill: list[dict[str, object]] = []
+        for saved in filtered_saved_tracks:
+            track_id = str(saved["track_id"])
+            cover_url = str(saved.get("cover_url") or "").strip()
+            preview_url = str(saved.get("preview_url") or "").strip()
+            needs_cover = not cover_url.startswith("https://")
+            if not (needs_cover or not preview_url) or track_id not in katalog_lookup.index:
+                continue
+
+            catalog_row = katalog_lookup.loc[track_id]
+            if isinstance(catalog_row, pd.DataFrame):
+                catalog_row = catalog_row.iloc[0]
+            media_candidates.append(
+                {
+                    "track_id": track_id,
+                    "track_name": str(catalog_row["track_name"]),
+                    "artists": str(catalog_row["artists"]),
+                }
+            )
+            saved_for_backfill.append(saved)
+
+        media_for_saved: dict[str, dict[str, object]] = {}
+        if media_candidates:
+            fetched_media = fetch_recommendation_media(
+                media_candidates,
+                max_workers=4,
+            )
+            for saved, candidate, media in zip(
+                saved_for_backfill,
+                media_candidates,
+                fetched_media,
+            ):
+                track_id = candidate["track_id"]
+                old_cover = str(saved.get("cover_url") or "").strip()
+                old_preview = str(saved.get("preview_url") or "").strip()
+                fetched_cover = str(media["cover_url"])
+                resolved_cover = (
+                    fetched_cover
+                    if not old_cover.startswith("https://")
+                    else old_cover
+                )
+                resolved_preview = str(media["preview_url"] or old_preview)
+                media_for_saved[track_id] = {
+                    "cover_url": resolved_cover or placeholder_cover_data_uri(
+                        candidate["track_name"]
+                    ),
+                    "preview_url": resolved_preview or None,
+                }
+
+                cover_to_save = (
+                    resolved_cover
+                    if resolved_cover.startswith("https://")
+                    and resolved_cover != old_cover
+                    else None
+                )
+                preview_to_save = (
+                    resolved_preview
+                    if resolved_preview and resolved_preview != old_preview
+                    else None
+                )
+                if cover_to_save or preview_to_save:
+                    save_track(
+                        user_id=user_id,
+                        track_id=track_id,
+                        aktivitas=str(saved["aktivitas"]),
+                        mood=str(saved["mood"]),
+                        cover_url=cover_to_save,
+                        preview_url=preview_to_save,
+                    )
+                    saved["cover_url"] = resolved_cover
+                    saved["preview_url"] = resolved_preview
+
         saved_columns = st.columns(4, gap="medium")
         for index, saved in enumerate(filtered_saved_tracks):
             track_id = str(saved["track_id"])
@@ -352,6 +432,13 @@ else:
                 track_name = f"Track {track_id}"
                 artists = "-"
                 genre = "-"
+            saved_media = media_for_saved.get(track_id, {})
+            cover_url = (
+                saved_media.get("cover_url")
+                or saved.get("cover_url")
+                or placeholder_cover_data_uri(track_name)
+            )
+            preview_url = saved_media.get("preview_url") or saved.get("preview_url")
 
             with saved_columns[index % len(saved_columns)]:
                 render_track_card(
@@ -362,6 +449,8 @@ else:
                     track_id=track_id,
                     show_player=False,
                     show_full_player=False,
+                    cover_url=str(cover_url),
+                    preview_url=str(preview_url) if preview_url else None,
                 )
                 st.caption(
                     f"{saved['aktivitas']} · {saved['mood']} · Disimpan {saved['created_at']}"

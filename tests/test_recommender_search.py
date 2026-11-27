@@ -57,12 +57,11 @@ class RecommenderSearchTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.recommender.cari_lagu_serupa(str(self.recommender.katalog.iloc[0]["track_id"]), n=0)
 
-    def test_popularity_mode_reranks_candidates_without_changing_audio_distances(self) -> None:
+    def test_popularity_mode_keeps_all_candidates_sorted_by_audio_distance(self) -> None:
         parameters = {
             "genre_user": None,
             "aktivitas": "Belajar",
             "mood": "Fokus",
-            "n": 10,
         }
         default = self.recommender.rekomendasi(**parameters)
         explicit_default = self.recommender.rekomendasi(
@@ -79,7 +78,10 @@ class RecommenderSearchTests(unittest.TestCase):
             default.attrs["jumlah_kandidat"],
             popular.attrs["jumlah_kandidat"],
         )
-        self.assertTrue(popular["popularity"].is_monotonic_decreasing)
+        self.assertEqual(len(default), default.attrs["jumlah_kandidat"])
+        self.assertEqual(len(popular), popular.attrs["jumlah_kandidat"])
+        self.assertTrue(default["jarak"].is_monotonic_increasing)
+        self.assertTrue(popular["jarak"].is_monotonic_increasing)
 
         target = self.recommender._bangun_vektor_target("Belajar", "Fokus")
         target_scaled = self.recommender.scaler.transform(
