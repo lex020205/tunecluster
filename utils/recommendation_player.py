@@ -11,14 +11,37 @@ PLAYER_COMPONENT_HTML = r"""
 <script>
 (() => {
     const incomingTracks = __TRACKS_JSON__;
+    const incomingDefaultTrackId = __DEFAULT_TRACK_ID__;
     const host = window.parent;
     const doc = host.document;
+    const playerVersion = 9;
     let player = host.__tcRecommendationPlayer;
+
+    if (player && player.version > playerVersion) return;
+
+    if (
+        player
+        && (
+            player.version !== playerVersion
+            || !doc.getElementById("tc-recommendation-player")
+            || !doc.getElementById("tc-recommendation-audio")
+        )
+    ) {
+        if (typeof player.dispose === "function") player.dispose();
+        doc.getElementById("tc-recommendation-player")?.remove();
+        doc.getElementById("tc-recommendation-audio")?.remove();
+        doc.querySelector('audio[aria-hidden="true"]')?.remove();
+        doc.getElementById("tc-recommendation-player-styles")?.remove();
+        player = null;
+    }
 
     if (!player) {
         const style = doc.createElement("style");
         style.id = "tc-recommendation-player-styles";
         style.textContent = `
+            body:not(:has(.tc-rec-scope-marker)) #tc-recommendation-player {
+                display: none !important;
+            }
             #tc-recommendation-player {
                 position: fixed;
                 z-index: 99999;
@@ -256,6 +279,7 @@ PLAYER_COMPONENT_HTML = r"""
         doc.body.appendChild(bar);
 
         const audio = doc.createElement("audio");
+        audio.id = "tc-recommendation-audio";
         audio.preload = "none";
         audio.hidden = true;
         audio.setAttribute("aria-hidden", "true");
@@ -265,7 +289,9 @@ PLAYER_COMPONENT_HTML = r"""
             cover: bar.querySelector("[data-player-cover]"),
             title: bar.querySelector("[data-player-title]"),
             artist: bar.querySelector("[data-player-artist]"),
+            previous: bar.querySelector('[data-player-action="prev"]'),
             toggle: bar.querySelector('[data-player-action="toggle"]'),
+            next: bar.querySelector('[data-player-action="next"]'),
             currentTime: bar.querySelector("[data-player-current-time]"),
             duration: bar.querySelector("[data-player-duration]"),
             seek: bar.querySelector("[data-player-seek]"),
@@ -280,10 +306,10 @@ PLAYER_COMPONENT_HTML = r"""
         };
         let tracks = [];
         let currentTrack = null;
+        let defaultTrackId = "";
         let statusMessage = "";
         let statusLink = "";
         let active = true;
-        let cleanupTimer = null;
         let reservedBlock = null;
         let originalPadding = "";
         let playRequestId = 0;
@@ -442,41 +468,103 @@ PLAYER_COMPONENT_HTML = r"""
             syncCards();
         }
 
+        function primaryPreviewUrl(track) {
+            return track.preview_url || track.fallback_preview_url || "";
+        }
+
+        function tryFallbackPreview(track, requestId) {
+            const fallbackUrl = track.fallback_preview_url;
+            if (
+                !track.preview_url
+                || !fallbackUrl
+                || fallbackUrl === track.preview_url
+                || requestId !== playRequestId
+                || audio.getAttribute("src") !== track.preview_url
+            ) {
+                return false;
+            }
+            console.info("[TuneCluster player] retrying with fallback preview", {
+                track: track.track_name,
+                preview_url: fallbackUrl,
+            });
+            audio.pause();
+            audio.currentTime = 0;
+            audio.src = fallbackUrl;
+            audio.load();
+            showStatus("Memuat preview cadangan...");
+            render();
+            const fallbackRequest = audio.play();
+            if (fallbackRequest && typeof fallbackRequest.catch === "function") {
+                fallbackRequest.catch((error) => {
+                    if (
+                        requestId !== playRequestId
+                        || (error && error.name === "AbortError")
+                        || audio.getAttribute("src") !== fallbackUrl
+                    ) {
+                        return;
+                    }
+                    console.error("[TuneCluster player] fallback audio.play() failed", {
+                        track: track.track_name,
+                        preview_url: fallbackUrl,
+                        error,
+                    });
+                    audio.pause();
+                    showStatus("Preview audio tidak tersedia untuk lagu ini", track.spotify_url);
+                    render();
+                });
+            }
+            return true;
+        }
+
         function playTrack(track, restart = true) {
             currentTrack = track;
-            if (!track.preview_url) {
+            const requestId = ++playRequestId;
+            const previewUrl = primaryPreviewUrl(track);
+            console.log("[TuneCluster player] play requested", {
+                track: track.track_name,
+                preview_url: previewUrl || null,
+                fallback_preview_url: track.fallback_preview_url || null,
+            });
+            if (!previewUrl) {
                 audio.pause();
                 audio.currentTime = 0;
                 audio.removeAttribute("src");
                 audio.load();
                 restoreVolume();
-                showStatus("Preview tidak tersedia", track.spotify_url);
+                showStatus("Preview audio tidak tersedia untuk lagu ini", track.spotify_url);
                 render();
                 return;
             }
             restoreVolume();
             showStatus("Memuat preview...");
-            const sourceChanged = audio.getAttribute("src") !== track.preview_url;
+            const sourceChanged = audio.getAttribute("src") !== previewUrl;
             if (restart || sourceChanged) {
                 audio.pause();
                 audio.currentTime = 0;
-                audio.src = track.preview_url;
+                audio.src = previewUrl;
                 audio.load();
             }
             render();
-            const requestId = ++playRequestId;
             const playRequest = audio.play();
             if (playRequest && typeof playRequest.catch === "function") {
                 playRequest.catch((error) => {
                     if (requestId !== playRequestId) return;
                     if (error && error.name === "AbortError") {
-                        audio.pause();
-                        showStatus("Preview tidak tersedia", track.spotify_url);
-                        render();
+                        console.info("[TuneCluster player] play request aborted", {
+                            track: track.track_name,
+                            preview_url: previewUrl,
+                        });
                         return;
                     }
+                    if (audio.getAttribute("src") !== previewUrl) return;
+                    if (tryFallbackPreview(track, requestId)) return;
+                    console.error("[TuneCluster player] audio.play() failed", {
+                        track: track.track_name,
+                        preview_url: previewUrl,
+                        error,
+                    });
                     audio.pause();
-                    showStatus("Preview tidak tersedia", track.spotify_url);
+                    showStatus("Preview audio tidak tersedia untuk lagu ini", track.spotify_url);
                     render();
                 });
             }
@@ -491,32 +579,8 @@ PLAYER_COMPONENT_HTML = r"""
             playTrack(tracks[nextIndex]);
         }
 
-        function handleClick(event) {
-            const target = event.target instanceof host.Element
-                ? event.target
-                : event.target && event.target.parentElement;
-            if (!target) return;
-            const control = target.closest("#tc-recommendation-player [data-player-action]");
-            if (control) {
-                event.preventDefault();
-                const action = control.getAttribute("data-player-action");
-                if (action === "prev") skip(-1);
-                else if (action === "next") skip(1);
-                else if (action === "toggle" && currentTrack) {
-                    if (!currentTrack.preview_url) {
-                        showStatus("Preview tidak tersedia", currentTrack.spotify_url);
-                        render();
-                    } else if (audio.paused) {
-                        playTrack(currentTrack, false);
-                    } else {
-                        audio.pause();
-                    }
-                }
-                return;
-            }
-            if (!active) return;
-            const button = target.closest('[data-testid="stButton"] button');
-            const wrapper = button && button.closest('div[class*="st-key-play_recommended_track_"]');
+        function handleCardClick(event, button) {
+            const wrapper = button.closest('div[class*="st-key-play_recommended_track_"]');
             if (!wrapper) return;
             const prefix = "st-key-play_recommended_track_";
             const key = Array.from(wrapper.classList).find((name) => name.startsWith(prefix));
@@ -525,7 +589,7 @@ PLAYER_COMPONENT_HTML = r"""
                 item.track_id === cardKey
                 || (Array.isArray(item.card_keys) && item.card_keys.includes(cardKey))
             ));
-            if (!track) return;
+            if (!active || !track) return;
             event.preventDefault();
             event.stopPropagation();
             event.stopImmediatePropagation();
@@ -536,22 +600,76 @@ PLAYER_COMPONENT_HTML = r"""
             }
         }
 
-        function reconcilePage() {
-            if (doc.querySelector(".tc-rec-scope-marker")) {
-                if (cleanupTimer) host.clearTimeout(cleanupTimer);
-                cleanupTimer = null;
+        function handleDocumentClick(event) {
+            const target = event.target instanceof host.Element ? event.target : null;
+            if (!target) return;
+            const cardButton = target.closest(
+                'div[class*="st-key-play_recommended_track_"] button',
+            );
+            if (cardButton) {
+                handleCardClick(event, cardButton);
                 return;
             }
-            if (!active || cleanupTimer) return;
-            cleanupTimer = host.setTimeout(() => {
-                cleanupTimer = null;
-                if (doc.querySelector(".tc-rec-scope-marker")) return;
-                active = false;
-                audio.pause();
-                currentTrack = null;
-                showStatus("");
+            const control = target.closest(
+                '#tc-recommendation-player [data-player-action]',
+            );
+            if (!control) return;
+            event.preventDefault();
+            const action = control.getAttribute("data-player-action");
+            if (action === "prev") skip(-1);
+            else if (action === "next") skip(1);
+            else if (action === "toggle") toggleCurrentTrack();
+        }
+
+        function handlePlayerInput(event) {
+            const target = event.target;
+            if (!(target instanceof host.HTMLInputElement)) return;
+            if (target.matches("#tc-recommendation-player [data-player-seek]")) {
+                if (Number.isFinite(audio.duration) && audio.duration > 0) {
+                    audio.currentTime = (Number(target.value) / 100) * audio.duration;
+                    refs.currentTime.textContent = formatTime(audio.currentTime);
+                }
+            } else if (target.matches("#tc-recommendation-player [data-player-volume]")) {
+                setVolume(target.value);
+            }
+        }
+
+        function handlePlayerChange(event) {
+            const target = event.target;
+            if (
+                target instanceof host.HTMLInputElement
+                && target.matches("#tc-recommendation-player [data-player-volume]")
+            ) {
+                setVolume(target.value);
+            }
+        }
+
+        function toggleCurrentTrack() {
+            if (!currentTrack) return;
+            if (!primaryPreviewUrl(currentTrack)) {
+                showStatus(
+                    "Preview audio tidak tersedia untuk lagu ini",
+                    currentTrack.spotify_url,
+                );
                 render();
-            }, 1500);
+            } else if (audio.paused) {
+                playTrack(currentTrack, false);
+            } else {
+                audio.pause();
+            }
+        }
+
+        function reconcilePage() {
+            if (doc.querySelector(".tc-rec-scope-marker")) {
+                active = true;
+                return;
+            }
+            if (!active) return;
+            active = false;
+            audio.pause();
+            currentTrack = null;
+            showStatus("");
+            render();
         }
 
         audio.addEventListener("play", () => {
@@ -564,41 +682,83 @@ PLAYER_COMPONENT_HTML = r"""
         audio.addEventListener("loadedmetadata", render);
         audio.addEventListener("ended", render);
         audio.addEventListener("error", () => {
-            if (
-                !currentTrack
-                || !currentTrack.preview_url
-                || audio.getAttribute("src") !== currentTrack.preview_url
-            ) {
+            if (!currentTrack) return;
+            if (audio.error && audio.error.code === 1) {
+                render();
+                return;
+            }
+            const primaryUrl = primaryPreviewUrl(currentTrack);
+            const fallbackUrl = currentTrack.fallback_preview_url || "";
+            const failedUrl = audio.getAttribute("src");
+            if (failedUrl !== primaryUrl && failedUrl !== fallbackUrl) return;
+            const failureLog = failedUrl === primaryUrl && fallbackUrl
+                ? console.warn
+                : console.error;
+            failureLog("[TuneCluster player] audio source failed", {
+                track: currentTrack.track_name,
+                preview_url: failedUrl,
+                error: audio.error,
+            });
+            if (failedUrl === primaryUrl && tryFallbackPreview(currentTrack, playRequestId)) {
                 return;
             }
             audio.pause();
-            showStatus("Preview tidak tersedia", currentTrack.spotify_url);
+            showStatus("Preview audio tidak tersedia untuk lagu ini", currentTrack.spotify_url);
             render();
         });
-        doc.addEventListener("click", handleClick, true);
-        refs.seek.addEventListener("input", () => {
-            if (Number.isFinite(audio.duration) && audio.duration > 0) {
-                audio.currentTime = (Number(refs.seek.value) / 100) * audio.duration;
-                refs.currentTime.textContent = formatTime(audio.currentTime);
-            }
-        });
-        refs.volume.addEventListener("input", () => setVolume(refs.volume.value));
-        refs.volume.addEventListener("change", () => setVolume(refs.volume.value));
+        doc.addEventListener("click", handleDocumentClick, true);
+        doc.addEventListener("input", handlePlayerInput, true);
+        doc.addEventListener("change", handlePlayerChange, true);
         restoreVolume();
-        new host.MutationObserver(reconcilePage).observe(doc.body, {
+        const pageObserver = new host.MutationObserver(() => {
+            reconcilePage();
+            syncCards();
+        });
+        pageObserver.observe(doc.body, {
             childList: true,
             subtree: true,
         });
+        const routeCheck = host.setInterval(reconcilePage, 500);
 
         player = {
-            update(nextTracks) {
+            version: playerVersion,
+            dispose() {
+                pageObserver.disconnect();
+                host.clearInterval(routeCheck);
+                doc.removeEventListener("click", handleDocumentClick, true);
+                doc.removeEventListener("input", handlePlayerInput, true);
+                doc.removeEventListener("change", handlePlayerChange, true);
+                audio.pause();
+                bar.remove();
+                audio.remove();
+            },
+            update(nextTracks, nextDefaultTrackId) {
+                const defaultChanged = nextDefaultTrackId !== defaultTrackId;
+                const previousTrackId = currentTrack && currentTrack.track_id;
                 tracks = nextTracks;
                 active = true;
-                if (cleanupTimer) host.clearTimeout(cleanupTimer);
-                cleanupTimer = null;
-                if (currentTrack) {
-                    const latest = tracks.find((track) => track.track_id === currentTrack.track_id);
-                    if (latest) currentTrack = latest;
+                defaultTrackId = nextDefaultTrackId || "";
+                const latestTrack = previousTrackId
+                    ? tracks.find((track) => track.track_id === previousTrackId)
+                    : null;
+                if (defaultChanged || !latestTrack) {
+                    currentTrack = (
+                        tracks.find((track) => track.track_id === defaultTrackId)
+                        || tracks[0]
+                        || null
+                    );
+                    if (currentTrack) {
+                        showStatus(
+                            primaryPreviewUrl(currentTrack)
+                                ? ""
+                                : "Preview audio tidak tersedia untuk lagu ini",
+                            primaryPreviewUrl(currentTrack) ? "" : currentTrack.spotify_url,
+                        );
+                    } else {
+                        showStatus("");
+                    }
+                } else {
+                    currentTrack = latestTrack;
                 }
                 render();
             },
@@ -606,7 +766,7 @@ PLAYER_COMPONENT_HTML = r"""
         host.__tcRecommendationPlayer = player;
     }
 
-    player.update(incomingTracks);
+    player.update(incomingTracks, incomingDefaultTrackId);
 })();
 </script>
 """
@@ -630,12 +790,21 @@ def serialize_player_tracks(tracks: Sequence[Mapping[str, object]]) -> str:
                 "artists": str(track.get("artists") or "Artis tidak diketahui"),
                 "cover_url": str(track.get("cover_url") or ""),
                 "preview_url": str(preview_url).strip() if preview_url else None,
+                "fallback_preview_url": (
+                    str(track.get("fallback_preview_url")).strip()
+                    if track.get("fallback_preview_url")
+                    else None
+                ),
                 "spotify_url": str(track.get("spotify_url") or ""),
                 "card_keys": [str(card_key) for card_key in card_keys if card_key],
             }
         )
+    return _serialize_script_json(payload)
+
+
+def _serialize_script_json(value: object) -> str:
     return (
-        json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        json.dumps(value, ensure_ascii=False, separators=(",", ":"))
         .replace("<", "\\u003c")
         .replace(">", "\\u003e")
         .replace("&", "\\u0026")
@@ -644,10 +813,17 @@ def serialize_player_tracks(tracks: Sequence[Mapping[str, object]]) -> str:
     )
 
 
-def render_recommendation_player(tracks: Sequence[Mapping[str, object]]) -> None:
+def render_recommendation_player(
+    tracks: Sequence[Mapping[str, object]],
+    *,
+    default_track_id: str | None = None,
+) -> None:
     """Install persistent browser audio controls without triggering Streamlit reruns."""
     component_html = PLAYER_COMPONENT_HTML.replace(
         "__TRACKS_JSON__",
         serialize_player_tracks(tracks),
+    ).replace(
+        "__DEFAULT_TRACK_ID__",
+        _serialize_script_json(default_track_id or ""),
     )
     st.components.v1.html(component_html, height=1, scrolling=False)

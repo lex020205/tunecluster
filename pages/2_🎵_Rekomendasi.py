@@ -34,7 +34,7 @@ from utils.media_fetcher import (
 )
 from utils.playlist_export import playlist_to_csv, playlist_to_text
 from utils.recommendation_player import render_recommendation_player
-from utils.recommender import get_recommender, normalisasi_genre
+from utils.recommender import get_recommender, track_has_genre
 from utils.spotify_embed import get_spotify_search_url, render_track_card
 
 st.set_page_config(
@@ -534,26 +534,24 @@ def _render_copy_playlist_button(playlist_text: str) -> None:
     st.components.v1.html(component_html, height=44, scrolling=False)
 
 
-def _render_result_genre_filter() -> list[str]:
-    """Render a compact genre filter above the current recommendation list."""
-    last_df = st.session_state.get("last_rekomendasi")
-    if last_df is None or last_df.empty:
-        return []
+def _render_result_genre_filter(user_genres: list[str]) -> str | None:
+    """Render a single-select filter using only the signed-in user's genres."""
+    profile_genres = [str(genre).strip() for genre in user_genres if str(genre).strip()]
+    previous_genres = st.session_state.get("_filter_genres_profile")
+    profile_changed = list(previous_genres or []) != profile_genres
+    recommendations_changed = st.session_state.pop("_reset_filter_genre", False)
+    if profile_changed or recommendations_changed:
+        st.session_state.pop("filter_genre_hasil", None)
+    st.session_state["_filter_genres_profile"] = profile_genres
 
-    genre_hasil = sorted(
-        {
-            normalisasi_genre(genre)
-            for value in last_df["genre_gabungan"].fillna("")
-            for genre in str(value).split(" | ")
-            if normalisasi_genre(genre)
-        }
-    )
-    if st.session_state.pop("_reset_filter_genre", False):
-        st.session_state["filter_genre_hasil"] = []
-    return st.multiselect(
+    if len(profile_genres) <= 1:
+        st.session_state.pop("filter_genre_hasil", None)
+        return None
+
+    return st.selectbox(
         "Filter genre",
-        options=genre_hasil,
-        placeholder="Semua genre",
+        options=profile_genres,
+        index=0,
         key="filter_genre_hasil",
     )
 
@@ -579,6 +577,7 @@ def _register_player_tracks(
                 "artists": artists,
                 "cover_url": str(media["cover_url"]),
                 "preview_url": media["preview_url"],
+                "fallback_preview_url": media.get("fallback_preview_url"),
                 "spotify_url": get_spotify_search_url(track_name, artists),
                 "card_keys": [],
             }
@@ -624,6 +623,7 @@ st.markdown("##### Genre favorit")
 _render_genre_badges(user_genres)
 st.divider()
 player_tracks_by_id: dict[str, dict[str, Any]] = {}
+player_default_track_id: str | None = None
 
 with st.expander(
     "Cari lagu di katalog",
@@ -880,7 +880,7 @@ if submit_btn:
     st.rerun()
 
 # 4. Tampilkan Hasil Rekomendasi
-filter_genres_hasil = _render_result_genre_filter()
+filter_genre_hasil = _render_result_genre_filter(user_genres)
 df_hasil = st.session_state.get("last_rekomendasi")
 meta_hasil = st.session_state.get("last_rekomendasi_meta")
 
@@ -949,12 +949,9 @@ if df_hasil is not None and meta_hasil is not None:
 
     # Terapkan filter genre bila aktif
     df_tampil = df_hasil.copy()
-    if filter_genres_hasil:
-        filter_set = set(filter_genres_hasil)
-        mask_f = df_tampil["genre_gabungan"].fillna("").apply(
-            lambda s: bool(
-                {normalisasi_genre(g) for g in str(s).split(" | ") if normalisasi_genre(g)} & filter_set
-            )
+    if filter_genre_hasil:
+        mask_f = df_tampil["genre_gabungan"].apply(
+            lambda genres: track_has_genre(genres, filter_genre_hasil)
         )
         df_tampil = df_tampil[mask_f].reset_index(drop=True)
 
@@ -983,6 +980,7 @@ if df_hasil is not None and meta_hasil is not None:
         ]
         export_rows = df_export.to_dict(orient="records")
         export_track_ids = [str(row["track_id"]) for row in export_rows]
+        player_default_track_id = export_track_ids[0] if export_track_ids else None
         _register_player_tracks(
             export_rows,
             [media_by_track_id[track_id] for track_id in export_track_ids],
@@ -1125,5 +1123,10 @@ if df_hasil is not None and meta_hasil is not None:
                             unsafe_allow_html=True,
                         )
 
-render_recommendation_player(list(player_tracks_by_id.values()))
+if player_default_track_id is None and player_tracks_by_id:
+    player_default_track_id = next(iter(player_tracks_by_id))
+render_recommendation_player(
+    list(player_tracks_by_id.values()),
+    default_track_id=player_default_track_id,
+)
 render_footer()

@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from utils.recommender import TuneClusterRecommender
+from utils.recommender import TuneClusterRecommender, track_has_genre
 
 
 class RecommenderSearchTests(unittest.TestCase):
@@ -21,6 +21,11 @@ class RecommenderSearchTests(unittest.TestCase):
         self.assertIn(track["track_id"], by_artist["track_id"].tolist())
         self.assertLessEqual(len(by_title), 5)
         self.assertIn("nama_cluster_birch", by_title.columns)
+
+    def test_selected_genre_matches_case_insensitively_across_separators(self) -> None:
+        self.assertTrue(track_has_genre("J-pop · Anime; Pop, R&B | Rock", "anime"))
+        self.assertTrue(track_has_genre("R&B", "r-n-b"))
+        self.assertFalse(track_has_genre("J-pop · Anime", "rock"))
 
     def test_empty_and_unmatched_search_return_no_results(self) -> None:
         self.assertTrue(self.recommender.cari_lagu("").empty)

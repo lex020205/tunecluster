@@ -9,6 +9,7 @@ perhitungan jarak Euclidean pada ruang fitur StandardScaler 5 dimensi).
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -49,6 +50,20 @@ def normalisasi_genre(nama: str) -> str:
     """Normalisasi nama genre menjadi huruf kecil dan terapkan alias eksplisit."""
     standar = str(nama).strip().lower()
     return ALIAS_GENRE.get(standar, standar)
+
+
+def track_has_genre(genre_gabungan: object, genre_pilihan: str) -> bool:
+    """Return whether a track has the selected genre across supported separators."""
+    selected = normalisasi_genre(genre_pilihan)
+    if not selected:
+        return False
+    combined_genres = "" if genre_gabungan is None else str(genre_gabungan)
+    track_genres = {
+        normalisasi_genre(genre)
+        for genre in re.split(r"[|·,;]", combined_genres)
+        if normalisasi_genre(genre)
+    }
+    return selected in track_genres
 
 
 def _tentukan_nama_cluster_dari_profil(

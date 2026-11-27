@@ -209,15 +209,14 @@ def render_track_card(
         )
 
         if shared_player:
-            if preview_url:
-                st.button(
-                    "Putar",
-                    key=f"play_recommended_track_{card_key}",
-                    icon=":material/play_arrow:",
-                    width="stretch",
-                    help=f"Putar {track_name}",
-                )
-            else:
+            st.button(
+                "Putar",
+                key=f"play_recommended_track_{card_key}",
+                icon=":material/play_arrow:",
+                width="stretch",
+                help=f"Putar {track_name}",
+            )
+            if not preview_url:
                 st.caption("Preview tidak tersedia.")
                 _render_spotify_fallback_buttons(
                     track_name,

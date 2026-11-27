@@ -27,6 +27,7 @@ JAPANESE_TEXT_PATTERN = re.compile(r"[\u3040-\u30ff\u3400-\u9fff]")
 class TrackMedia(TypedDict):
     cover_url: str
     preview_url: str | None
+    fallback_preview_url: str | None
 
 
 def primary_artist(artists: str) -> str:
@@ -293,6 +294,8 @@ def fetch_track_media(
     spotify_id = _spotify_track_id(track_id)
     cover_url = get_spotify_cover_url(spotify_id) if spotify_id else None
     preview_url: str | None = None
+    fallback_preview_url: str | None = None
+    preview_source: str | None = None
     variants = _search_variants(title, artist)
 
     for term, country in variants:
@@ -309,7 +312,10 @@ def fetch_track_media(
         records = [row for row in raw_results if isinstance(row, dict)] if isinstance(raw_results, list) else []
         for record in _rank_records(records, title, artist, provider="itunes"):
             cover_url = cover_url or _itunes_artwork(record)
-            preview_url = preview_url or _itunes_preview(record)
+            itunes_preview = _itunes_preview(record)
+            if preview_url is None and itunes_preview:
+                preview_url = itunes_preview
+                preview_source = "itunes"
             if cover_url and preview_url:
                 break
         if cover_url and preview_url:
@@ -317,7 +323,9 @@ def fetch_track_media(
 
     deezer_terms = list(dict.fromkeys(term for term, _ in variants))
     for term in deezer_terms:
-        if cover_url and preview_url:
+        if cover_url and preview_url and (
+            preview_source == "deezer" or fallback_preview_url
+        ):
             break
         payload = _request_json(
             "https://api.deezer.com/search?" + urlencode({"q": term, "limit": "5"}),
@@ -327,15 +335,30 @@ def fetch_track_media(
         records = [row for row in raw_results if isinstance(row, dict)] if isinstance(raw_results, list) else []
         for record in _rank_records(records, title, artist, provider="deezer"):
             cover_url = cover_url or _deezer_artwork(record)
-            preview_url = preview_url or _deezer_preview(record)
-            if cover_url and preview_url:
+            deezer_preview = _deezer_preview(record)
+            if preview_url is None and deezer_preview:
+                preview_url = deezer_preview
+                preview_source = "deezer"
+            elif (
+                preview_source == "itunes"
+                and fallback_preview_url is None
+                and deezer_preview != preview_url
+            ):
+                fallback_preview_url = deezer_preview
+            if cover_url and preview_url and (
+                preview_source == "deezer" or fallback_preview_url
+            ):
                 break
 
     if cover_url is None:
         LOGGER.warning("No remote cover found for %r by %r; using initials placeholder", title, artist)
         cover_url = placeholder_cover_data_uri(title)
 
-    return {"cover_url": cover_url, "preview_url": preview_url}
+    return {
+        "cover_url": cover_url,
+        "preview_url": preview_url,
+        "fallback_preview_url": fallback_preview_url,
+    }
 
 
 def _fetch_track_row(track: Mapping[str, object]) -> TrackMedia:

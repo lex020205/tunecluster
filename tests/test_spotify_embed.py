@@ -78,7 +78,7 @@ def test_shared_player_cards_do_not_render_spotify_embeds() -> None:
     assert button.call_args.kwargs["key"] == "play_recommended_track_search_0"
 
 
-def test_shared_player_card_without_preview_shows_only_spotify_fallback() -> None:
+def test_shared_player_card_without_preview_keeps_play_control_and_spotify_fallback() -> None:
     from utils.spotify_embed import render_track_card
 
     with (
@@ -99,5 +99,5 @@ def test_shared_player_card_without_preview_shows_only_spotify_fallback() -> Non
         )
 
     iframe.assert_not_called()
-    button.assert_not_called()
+    assert button.call_args.kwargs["key"] == "play_recommended_track_search_1"
     assert any("Buka di Spotify" in call.args[0] for call in markdown.call_args_list)
