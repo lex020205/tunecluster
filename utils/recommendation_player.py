@@ -255,9 +255,11 @@ PLAYER_COMPONENT_HTML = r"""
         "use strict";
         const tracks = __TRACKS_JSON__;
         const defaultTrackId = __DEFAULT_TRACK_ID__;
+        const autoplay = __AUTOPLAY__;
+        const autoplayRequestId = __PLAY_REQUEST_ID__;
         const player = document.getElementById("tc-recommendation-player");
         const audio = new Audio();
-        audio.preload = "metadata";
+        audio.preload = "auto";
         audio.setAttribute("aria-label", "Preview lagu");
         document.body.appendChild(audio);
 
@@ -285,6 +287,7 @@ PLAYER_COMPONENT_HTML = r"""
             || tracks[0]
             || null;
         let playRequestId = 0;
+        let playPending = false;
         let recovery = null;
         let lastAudibleVolume = 0.8;
         player.hidden = !currentTrack;
@@ -375,7 +378,7 @@ PLAYER_COMPONENT_HTML = r"""
             refs.cover.alt = `Sampul ${currentTrack.track_name}`;
             refs.title.textContent = currentTrack.track_name || "Tanpa Judul";
             refs.artist.textContent = currentTrack.artists || "Artis tidak diketahui";
-            const playing = !audio.paused && !audio.ended;
+            const playing = playPending || (!audio.paused && !audio.ended);
             refs.toggle.setAttribute("aria-label", playing ? "Jeda" : "Putar");
             refs.toggle.title = playing ? "Jeda" : "Putar";
             refs.toggleIcon.innerHTML = playing
@@ -449,6 +452,7 @@ PLAYER_COMPONENT_HTML = r"""
         }
 
         function finishPlaybackFailure(track, message = "Preview tidak tersedia") {
+            playPending = false;
             audio.pause();
             showStatus(message, track.spotify_url || "");
             render();
@@ -508,11 +512,17 @@ PLAYER_COMPONENT_HTML = r"""
             audio.src = previewUrl;
             audio.load();
             restoreVolume();
+            playPending = true;
             render();
             const playRequest = audio.play();
             if (playRequest && typeof playRequest.catch === "function") {
                 playRequest.catch((error) => {
-                    if (requestId !== playRequestId || error.name === "AbortError") return;
+                    if (requestId !== playRequestId) return;
+                    playPending = false;
+                    if (error.name === "AbortError") {
+                        render();
+                        return;
+                    }
                     if (error.name === "NotAllowedError") {
                         finishPlaybackFailure(track, "Browser memblokir audio. Tekan Putar lagi.");
                         return;
@@ -522,12 +532,13 @@ PLAYER_COMPONENT_HTML = r"""
             }
         }
 
-        function playTrack(track) {
+        function playTrack(track, requestToken = null) {
             currentTrack = track;
             const requestId = ++playRequestId;
             console.log("[TuneCluster player] play", {
                 track: track.track_name,
                 preview_url: track.preview_url || "",
+                request_id: requestToken,
             });
             recovery = {
                 requestId,
@@ -572,11 +583,15 @@ PLAYER_COMPONENT_HTML = r"""
         refs.volume.addEventListener("change", () => setVolume(refs.volume.value));
         refs.mute.addEventListener("click", toggleMute);
         audio.addEventListener("play", () => {
+            playPending = false;
             showStatus("");
             render();
         });
         audio.addEventListener("playing", render);
-        audio.addEventListener("pause", render);
+        audio.addEventListener("pause", () => {
+            playPending = false;
+            render();
+        });
         audio.addEventListener("timeupdate", render);
         audio.addEventListener("loadedmetadata", render);
         audio.addEventListener("ended", render);
@@ -587,6 +602,9 @@ PLAYER_COMPONENT_HTML = r"""
         });
         restoreVolume();
         render();
+        if (autoplay && currentTrack && autoplayRequestId !== null) {
+            playTrack(currentTrack, autoplayRequestId);
+        }
     })();
     </script>
 </body>
@@ -638,10 +656,25 @@ def serialize_player_tracks(tracks: Sequence[Mapping[str, object]]) -> str:
     return _serialize_script_json(payload)
 
 
+def request_track_play(track: Mapping[str, object]) -> None:
+    """Record a one-shot autoplay request for a selected card track."""
+    track_id = str(track.get("track_id") or "")
+    if not track_id:
+        raise ValueError("Track ID is required to request playback.")
+
+    play_request_id = int(st.session_state.get("_player_play_request_id", 0)) + 1
+    st.session_state["_player_selected_track"] = dict(track)
+    st.session_state["_player_selected_track_id"] = track_id
+    st.session_state["_player_autoplay"] = True
+    st.session_state["_player_play_request_id"] = play_request_id
+
+
 def render_recommendation_player(
     tracks: Sequence[Mapping[str, object]],
     *,
     default_track_id: str | None = None,
+    autoplay: bool = False,
+    play_request_id: int | None = None,
 ) -> None:
     """Render the audio controls in one self-contained iframe."""
     if not tracks:
@@ -652,6 +685,12 @@ def render_recommendation_player(
     ).replace(
         "__DEFAULT_TRACK_ID__",
         _serialize_script_json(default_track_id or ""),
+    ).replace(
+        "__AUTOPLAY__",
+        _serialize_script_json(autoplay),
+    ).replace(
+        "__PLAY_REQUEST_ID__",
+        _serialize_script_json(play_request_id),
     )
     with st.container(key="tc-recommendation-player-host"):
         st.components.v1.html(

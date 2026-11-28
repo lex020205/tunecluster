@@ -32,7 +32,10 @@ from utils.media_fetcher import (
     primary_artist,
 )
 from utils.playlist_export import playlist_to_csv, playlist_to_text
-from utils.recommendation_player import render_recommendation_player
+from utils.recommendation_player import (
+    render_recommendation_player,
+    request_track_play,
+)
 from utils.recommender import (
     get_recommender,
     score_recommendations,
@@ -730,7 +733,7 @@ with st.expander(
                             shared_player=True,
                             player_key=card_key,
                         ):
-                            st.session_state["_player_selected_track_id"] = track_id
+                            request_track_play(player_tracks_by_id[track_id])
                             st.rerun()
                         if st.button(
                             "Cari yang mirip",
@@ -795,7 +798,9 @@ with st.expander(
                             shared_player=True,
                             player_key=card_key,
                         ):
-                            st.session_state["_player_selected_track_id"] = str(row["track_id"])
+                            request_track_play(
+                                player_tracks_by_id[str(row["track_id"])]
+                            )
                             st.rerun()
 
 
@@ -1087,7 +1092,7 @@ if df_hasil is not None and meta_hasil is not None:
                                 width="stretch",
                                 help=f"Pilih {track_name} di pemutar bawah",
                             ):
-                                st.session_state["_player_selected_track_id"] = track_id
+                                request_track_play(player_tracks_by_id[track_id])
                                 st.rerun()
                         with save_col:
                             if track_id in saved_track_ids:
@@ -1153,13 +1158,24 @@ if df_hasil is not None and meta_hasil is not None:
                 st.session_state["_recommendation_visible_count"] = visible_count + 24
                 st.rerun()
 
+selected_player_track = st.session_state.get("_player_selected_track")
+if isinstance(selected_player_track, Mapping):
+    selected_track_id = str(selected_player_track.get("track_id") or "")
+    if selected_track_id and selected_track_id not in player_tracks_by_id:
+        player_tracks_by_id[selected_track_id] = dict(selected_player_track)
+
 selected_player_track_id = st.session_state.get("_player_selected_track_id")
 if selected_player_track_id in player_tracks_by_id:
     player_default_track_id = selected_player_track_id
 elif player_default_track_id is None and player_tracks_by_id:
     player_default_track_id = next(iter(player_tracks_by_id))
+autoplay = bool(st.session_state.get("_player_autoplay", False))
 render_recommendation_player(
     list(player_tracks_by_id.values()),
     default_track_id=player_default_track_id,
+    autoplay=autoplay,
+    play_request_id=st.session_state.get("_player_play_request_id"),
 )
+if autoplay:
+    st.session_state["_player_autoplay"] = False
 render_footer()
