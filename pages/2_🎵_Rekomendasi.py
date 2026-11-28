@@ -8,7 +8,6 @@ import html
 import json
 import math
 from collections.abc import Mapping, Sequence
-from textwrap import dedent
 from typing import Any
 
 import plotly.graph_objects as go
@@ -404,6 +403,11 @@ body:has(.tc-rec-scope-marker) .tc-rec-score-label {
 }
 </style>
 """
+
+
+def _normalize_html(markup: str) -> str:
+    return "\n".join(line.strip() for line in markup.splitlines() if line.strip())
+
 
 def _render_genre_badges(genres: list[str]) -> None:
     """Tampilkan daftar genre user dalam bentuk badge monokrom."""
@@ -922,7 +926,7 @@ if df_hasil is not None and meta_hasil is not None:
                 else ""
             )
             st.markdown(
-                dedent(f"""
+                _normalize_html(f"""
                 <div class="cluster-box">
                     <div style="font-size:0.82rem; color:#B3B3B3;">Cluster Target ({algo_used.upper()})</div>
                     <div style="font-size:1.45rem; font-weight:800; color:#1DB954; margin-bottom:0.4rem;">
@@ -935,7 +939,7 @@ if df_hasil is not None and meta_hasil is not None:
                         {fallback_notice}
                     </div>
                 </div>
-                """).strip(),
+                """),
                 unsafe_allow_html=True,
             )
 
@@ -1016,7 +1020,7 @@ if df_hasil is not None and meta_hasil is not None:
             )
             with col_title:
                 st.markdown(
-                    f"""
+                    _normalize_html(f"""
                     <div>
                         <h2 class="tc-rec-results-title">Hasil rekomendasi</h2>
                         <div class="tc-rec-results-caption">
@@ -1024,7 +1028,7 @@ if df_hasil is not None and meta_hasil is not None:
                             (kemiripan ≥ 50%)
                         </div>
                     </div>
-                    """,
+                    """),
                     unsafe_allow_html=True,
                 )
             with col_copy:
@@ -1066,12 +1070,12 @@ if df_hasil is not None and meta_hasil is not None:
                 with track_columns[position % len(track_columns)]:
                     with st.container(key=f"tc-rec-card-{track_id}"):
                         st.markdown(
-                            f"""
+                            _normalize_html(f"""
                             <div class="tc-rec-artwork">
                                 <img src="{safe_cover_url}" alt="Sampul {safe_title}"
                                      loading="lazy" decoding="async">
                             </div>
-                            """,
+                            """),
                             unsafe_allow_html=True,
                         )
                         play_col, save_col = st.columns([1, 1], gap="small")
@@ -1120,7 +1124,7 @@ if df_hasil is not None and meta_hasil is not None:
                                     st.info("Lagu ini sudah tersimpan.")
 
                         st.markdown(
-                            f"""
+                            _normalize_html(f"""
                             <div class="tc-rec-card-details">
                                 <div class="tc-rec-track-title" title="{title_attr}">{safe_title}</div>
                                 <div class="tc-rec-track-meta" title="{safe_artist_genre}">
@@ -1136,7 +1140,7 @@ if df_hasil is not None and meta_hasil is not None:
                                 </div>
                                 {popularity_html}
                             </div>
-                            """,
+                            """),
                             unsafe_allow_html=True,
                         )
 
